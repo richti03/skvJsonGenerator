@@ -1145,6 +1145,76 @@ async function getExistingFileSha({ owner, repo, path, branch, token }) {
   return payload.sha || null;
 }
 
+async function getRepositoryDefaultBranch({ owner, repo, token }) {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Repository konnte nicht geladen werden (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload.default_branch || "main";
+}
+
+async function getBranchHeadSha({ owner, repo, branch, token }) {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Branch-Info konnte nicht geladen werden (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload?.object?.sha || null;
+}
+
+async function createBranchFromDefault({ owner, repo, branch, token }) {
+  const defaultBranch = await getRepositoryDefaultBranch({ owner, repo, token });
+  const baseSha = await getBranchHeadSha({ owner, repo, branch: defaultBranch, token });
+  if (!baseSha) {
+    throw new Error(`Default-Branch '${defaultBranch}' konnte nicht aufgelöst werden.`);
+  }
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ref: `refs/heads/${branch}`,
+      sha: baseSha
+    })
+  });
+
+  if (response.status === 422) {
+    return;
+  }
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Branch konnte nicht erstellt werden (${response.status}): ${errorText}`);
+  }
+}
+
+async function ensureBranchExists({ owner, repo, branch, token }) {
+  const existingSha = await getBranchHeadSha({ owner, repo, branch, token });
+  if (existingSha) return;
+  await createBranchFromDefault({ owner, repo, branch, token });
+}
+
 function openCommitDialog(defaultMessage) {
   if (!commitDialog || !commitForm || !githubTokenInput || !commitMessageInput) return Promise.resolve(null);
   if (typeof commitDialog.showModal !== "function") {
@@ -1206,9 +1276,11 @@ async function commitGeneratedJson() {
   }
 
   commitBtn.disabled = true;
-  setCommitStatus("Commit wird erstellt...");
+  setCommitStatus("Branch wird geprüft...");
 
   try {
+    await ensureBranchExists({ owner, repo, branch, token: commitInput.token });
+    setCommitStatus("Commit wird erstellt...");
     const normalizedJson = JSON.stringify(parsedJson, null, 2);
     const sha = await getExistingFileSha({ owner, repo, path, branch, token: commitInput.token });
 
