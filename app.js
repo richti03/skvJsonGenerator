@@ -214,6 +214,7 @@ function createInput(field, value) {
   let input;
   if (field.type === "textarea") {
     input = document.createElement("textarea");
+    input.value = toInputValue(value, field.type);
   } else if (field.type === "checkbox") {
     input = document.createElement("input");
     input.type = "checkbox";
