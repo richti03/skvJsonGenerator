@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SKV JSON Generator</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>SKV JSON Generator</h1>
+      <p class="lead">
+        Erstelle valide JSON-Arrays für <code>src/data</code> gemäß der Spezifikation.
+      </p>
+
+      <section class="panel controls">
+        <div class="grid-2">
+          <div>
+            <label for="typeSelect">Dateityp</label>
+            <select id="typeSelect"></select>
+          </div>
+          <div id="galleryNameWrap" class="hidden">
+            <label for="galleryNameInput">Galerie-Dateiname (ohne .json)</label>
+            <input id="galleryNameInput" type="text" value="home-gallery" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="baseUrlInput">Basis-URL für Online-Daten</label>
+            <input id="baseUrlInput" type="text" value="https://richti03.github.io/skvstatic" />
+          </div>
+          <div class="align-end">
+            <button id="loadOnlineBtn" type="button">Online JSON laden</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="addEntryBtn" type="button">Eintrag hinzufügen</button>
+          <button id="generateBtn" type="button">JSON generieren</button>
+          <button id="copyBtn" type="button">JSON kopieren</button>
+          <button id="downloadBtn" type="button">Als Datei herunterladen</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Einträge</h2>
+        <div id="entries"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Validierung</h2>
+        <ul id="validationList"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Ergebnis JSON</h2>
+        <pre id="output" aria-live="polite"></pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
