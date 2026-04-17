@@ -767,11 +767,16 @@ function getDragInsertBefore(container, pointerY) {
   ).element;
 }
 
+let dragFromHandle = false;
+
+entriesEl.addEventListener("pointerdown", (event) => {
+  dragFromHandle = !!event.target.closest(".drag-handle");
+});
+
 entriesEl.addEventListener("dragstart", (event) => {
   const entry = event.target.closest(".entry");
   if (!entry) return;
-  const handle = event.target.closest(".drag-handle");
-  if (!handle) {
+  if (!dragFromHandle) {
     event.preventDefault();
     return;
   }
@@ -779,6 +784,7 @@ entriesEl.addEventListener("dragstart", (event) => {
   entry.classList.add("is-dragging");
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", "entry");
+  dragFromHandle = false;
 });
 
 entriesEl.addEventListener("dragover", (event) => {
@@ -796,6 +802,7 @@ entriesEl.addEventListener("dragend", (event) => {
   if (!entry) return;
 
   entry.classList.remove("is-dragging");
+  dragFromHandle = false;
   renumberAndRefreshSummaries();
   resetValidationUi();
 });
