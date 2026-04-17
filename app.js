@@ -507,6 +507,19 @@ function updateNewsDeleteAt(entryEl) {
   deleteInput.dataset.autoManaged = "true";
 }
 
+function syncEntryExpiredState(entryEl) {
+  if (!entryEl) return;
+  if (typeSelect.value !== "news") {
+    entryEl.classList.remove("is-expired-news");
+    return;
+  }
+
+  const entryData = readEntry(entryEl);
+  const deleteDate = entryData.deleteAt ? parseDateWindow(entryData.deleteAt) : null;
+  const isExpired = deleteDate instanceof Date && !Number.isNaN(deleteDate.getTime()) && deleteDate.getTime() < Date.now();
+  entryEl.classList.toggle("is-expired-news", isExpired);
+}
+
 function markFieldError(element) {
   const wrapper = element.closest(".form-field") || element;
   wrapper.classList.add("has-error");
@@ -750,6 +763,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   else collapseAllEntries();
 
   renumberAndRefreshSummaries();
+  syncEntryExpiredState(entry);
 
   if (scrollToEntry) {
     entry.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -761,6 +775,7 @@ function validateAndGenerate() {
 
   const entries = [...entriesEl.querySelectorAll(".entry")].map((entryEl) => {
     updateNewsDeleteAt(entryEl);
+    syncEntryExpiredState(entryEl);
     return readEntry(entryEl);
   });
   const errors = validate(entries, typeSelect.value);
@@ -895,6 +910,7 @@ entriesEl.addEventListener("input", (event) => {
     }
     const index = [...entriesEl.querySelectorAll(".entry")].indexOf(entryEl);
     refreshEntrySummary(entryEl, index);
+    syncEntryExpiredState(entryEl);
   }
   resetValidationUi();
 });
