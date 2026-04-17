@@ -652,6 +652,8 @@ function readEntry(entryEl) {
   const data = {};
 
   entryEl.querySelectorAll("input[data-field], textarea[data-field], select[data-field]").forEach((input) => {
+    if (input.dataset.subField) return;
+
     const name = input.dataset.field;
     const type = input.dataset.fieldType;
 
