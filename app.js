@@ -1,6 +1,11 @@
+const CONFIG = {
+  DEFAULT_BASE_URL: "https://richti03.github.io/skvstatic"
+};
+
 const specs = {
   news: {
     filename: "news.json",
+    summaryKeys: ["title", "date"],
     fields: [
       { name: "title", type: "text", required: true },
       { name: "date", type: "text", required: true, placeholder: "TT.MM.JJJJ" },
@@ -9,11 +14,15 @@ const specs = {
       { name: "publishAt", type: "text", placeholder: "JJJJ-MM-TT-HH:mm" },
       { name: "deleteAt", type: "text", required: true, placeholder: "JJJJ-MM-TT-HH:mm" },
       { name: "large", type: "checkbox" },
-      { name: "links", type: "list", itemFields: [
-        { name: "type", type: "text" },
-        { name: "label", type: "text" },
-        { name: "url", type: "text", required: true }
-      ] }
+      {
+        name: "links",
+        type: "list",
+        itemFields: [
+          { name: "type", type: "text" },
+          { name: "label", type: "text" },
+          { name: "url", type: "text", required: true }
+        ]
+      }
     ],
     template: {
       title: "Beispielnews",
@@ -26,6 +35,7 @@ const specs = {
   },
   events: {
     filename: "events.json",
+    summaryKeys: ["title", "date", "location"],
     fields: [
       { name: "title", type: "text", required: true },
       { name: "date", type: "text", required: true, placeholder: "TT.MM.JJJJ" },
@@ -37,11 +47,15 @@ const specs = {
       { name: "image", type: "text" },
       { name: "publishAt", type: "text", placeholder: "JJJJ-MM-TT-HH:mm" },
       { name: "deleteAt", type: "text", required: true, placeholder: "JJJJ-MM-TT-HH:mm" },
-      { name: "links", type: "list", itemFields: [
-        { name: "type", type: "text" },
-        { name: "label", type: "text" },
-        { name: "url", type: "text", required: true }
-      ] }
+      {
+        name: "links",
+        type: "list",
+        itemFields: [
+          { name: "type", type: "text" },
+          { name: "label", type: "text" },
+          { name: "url", type: "text", required: true }
+        ]
+      }
     ],
     template: {
       title: "Beispielveranstaltung",
@@ -54,18 +68,24 @@ const specs = {
   },
   vorstand: {
     filename: "vorstand.json",
+    summaryKeys: ["name", "role"],
     fields: [
       { name: "name", type: "text", required: true },
       { name: "role", type: "text", required: true },
       { name: "image", type: "text", required: true },
       { name: "tags", type: "csv", required: true, placeholder: "Tag1, Tag2" },
       { name: "description", type: "textarea", required: true },
-      { name: "socials", type: "list", required: true, itemFields: [
-        { name: "label", type: "text", required: true },
-        { name: "href", type: "text", required: true },
-        { name: "className", type: "text", required: true },
-        { name: "icon", type: "text", required: true }
-      ] }
+      {
+        name: "socials",
+        type: "list",
+        required: true,
+        itemFields: [
+          { name: "label", type: "text", required: true },
+          { name: "href", type: "text", required: true },
+          { name: "className", type: "text", required: true },
+          { name: "icon", type: "text", required: true }
+        ]
+      }
     ],
     template: {
       name: "Max Mustermann",
@@ -78,6 +98,7 @@ const specs = {
   },
   elferrat: {
     filename: "elferrat.json",
+    summaryKeys: ["name", "role"],
     fields: [
       { name: "name", type: "text", required: true },
       { name: "role", type: "text", required: true },
@@ -91,6 +112,7 @@ const specs = {
   },
   royals: {
     filename: "royals.json",
+    summaryKeys: ["session", "year"],
     fields: [
       { name: "session", type: "text", required: true },
       { name: "year", type: "text", required: true },
@@ -107,6 +129,7 @@ const specs = {
   },
   linktree: {
     filename: "linktree.json",
+    summaryKeys: ["text", "url"],
     fields: [
       { name: "icon", type: "text", placeholder: "website|instagram|facebook|download" },
       { name: "text", type: "text", required: true },
@@ -120,6 +143,7 @@ const specs = {
   },
   gallery: {
     filename: "gallerys/{xyz}.json",
+    summaryKeys: ["src", "alt"],
     fields: [
       { name: "src", type: "text", required: true },
       { name: "alt", type: "text" }
@@ -132,6 +156,10 @@ const specs = {
 };
 
 const typeSelect = document.querySelector("#typeSelect");
+const galleryNameWrap = document.querySelector("#galleryNameWrap");
+const galleryNameInput = document.querySelector("#galleryNameInput");
+const baseUrlInput = document.querySelector("#baseUrlInput");
+const loadOnlineBtn = document.querySelector("#loadOnlineBtn");
 const entriesEl = document.querySelector("#entries");
 const outputEl = document.querySelector("#output");
 const validationList = document.querySelector("#validationList");
@@ -147,8 +175,14 @@ Object.keys(specs).forEach((key) => {
   typeSelect.append(opt);
 });
 
+baseUrlInput.value = CONFIG.DEFAULT_BASE_URL;
+
 const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
 const windowRegex = /^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}$/;
+
+function updateTypeDependentUi() {
+  galleryNameWrap.classList.toggle("hidden", typeSelect.value !== "gallery");
+}
 
 function toInputValue(value, fieldType) {
   if (fieldType === "csv") return Array.isArray(value) ? value.join(", ") : "";
@@ -184,6 +218,37 @@ function createInput(field, value) {
   return { wrapper, input };
 }
 
+function addListItem(field, container, value = {}) {
+  const item = document.createElement("div");
+  item.className = "list-item";
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.textContent = "Entfernen";
+  removeBtn.addEventListener("click", () => {
+    item.remove();
+    generateJson();
+  });
+  item.append(removeBtn);
+
+  const definition =
+    field.type === "pairList"
+      ? [
+          { name: "prince", type: "text", required: true },
+          { name: "princess", type: "text", required: true }
+        ]
+      : field.itemFields;
+
+  definition.forEach((subField) => {
+    const { wrapper, input } = createInput(subField, value[subField.name]);
+    input.dataset.subField = subField.name;
+    input.dataset.required = String(!!subField.required);
+    item.append(wrapper);
+  });
+
+  container.append(item);
+}
+
 function createListBlock(field, value = []) {
   const block = document.createElement("div");
   block.className = "list-block";
@@ -197,7 +262,10 @@ function createListBlock(field, value = []) {
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.textContent = `${field.name}-Eintrag hinzufügen`;
-  addBtn.addEventListener("click", () => addListItem(field, listContainer));
+  addBtn.addEventListener("click", () => {
+    addListItem(field, listContainer);
+    generateJson();
+  });
   block.append(addBtn);
 
   const listValues = Array.isArray(value) ? value : [];
@@ -208,65 +276,6 @@ function createListBlock(field, value = []) {
   block.dataset.fieldType = field.type;
   block.dataset.required = String(!!field.required);
   return block;
-}
-
-function addListItem(field, container, value = {}) {
-  const item = document.createElement("div");
-  item.className = "list-item";
-
-  const removeBtn = document.createElement("button");
-  removeBtn.type = "button";
-  removeBtn.textContent = "Entfernen";
-  removeBtn.addEventListener("click", () => item.remove());
-  item.append(removeBtn);
-
-  const definition = field.type === "pairList"
-    ? [{ name: "prince", type: "text", required: true }, { name: "princess", type: "text", required: true }]
-    : field.itemFields;
-
-  definition.forEach((subField) => {
-    const { wrapper, input } = createInput(subField, value[subField.name]);
-    input.dataset.subField = subField.name;
-    input.dataset.required = String(!!subField.required);
-    item.append(wrapper);
-  });
-
-  container.append(item);
-}
-
-function renderEntries(typeKey) {
-  entriesEl.innerHTML = "";
-  const spec = specs[typeKey];
-  addEntry(spec.template);
-}
-
-function addEntry(defaults = {}) {
-  const typeKey = typeSelect.value;
-  const spec = specs[typeKey];
-  const entry = document.createElement("article");
-  entry.className = "entry";
-
-  const header = document.createElement("div");
-  header.className = "entry-header";
-  const title = document.createElement("h3");
-  title.textContent = `Eintrag ${entriesEl.children.length + 1}`;
-  const delBtn = document.createElement("button");
-  delBtn.textContent = "Eintrag löschen";
-  delBtn.type = "button";
-  delBtn.addEventListener("click", () => entry.remove());
-  header.append(title, delBtn);
-  entry.append(header);
-
-  spec.fields.forEach((field) => {
-    if (field.type === "list" || field.type === "pairList") {
-      entry.append(createListBlock(field, defaults[field.name]));
-    } else {
-      const { wrapper } = createInput(field, defaults[field.name]);
-      entry.append(wrapper);
-    }
-  });
-
-  entriesEl.append(entry);
 }
 
 function readEntry(entryEl) {
@@ -281,14 +290,11 @@ function readEntry(entryEl) {
       return;
     }
 
-    let value = input.value.trim();
+    const value = input.value.trim();
     if (!value) return;
 
-    if (type === "csv") {
-      data[name] = value.split(",").map((part) => part.trim()).filter(Boolean);
-    } else {
-      data[name] = value;
-    }
+    if (type === "csv") data[name] = value.split(",").map((part) => part.trim()).filter(Boolean);
+    else data[name] = value;
   });
 
   entryEl.querySelectorAll(".list-block[data-field]").forEach((block) => {
@@ -314,46 +320,34 @@ function readEntry(entryEl) {
 
 function parseDateWindow(value) {
   if (!windowRegex.test(value)) return null;
-  const [date, time] = value.split("-").reduce((acc, part, i) => {
-    if (i < 3) acc[0].push(part);
-    else acc[1].push(part);
-    return acc;
-  }, [[], []]);
-  const [y, m, d] = date.map(Number);
-  const [h, min] = time.join("-").split(":").map(Number);
-  return new Date(Date.UTC(y, m - 1, d, h, min));
+  const [year, month, day, hm] = value.split("-");
+  const [hour, minute] = hm.split(":");
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
 }
 
 function validate(entries, typeKey) {
   const checks = [];
   const spec = specs[typeKey];
 
-  checks.push({
-    ok: Array.isArray(entries),
-    text: "Top-Level ist ein Array"
-  });
+  checks.push({ ok: Array.isArray(entries), text: "Top-Level ist ein Array" });
 
   entries.forEach((entry, idx) => {
     spec.fields.forEach((field) => {
       if (!field.required) return;
-      const hasValue = field.type === "checkbox"
-        ? entry[field.name] === true
-        : Array.isArray(entry[field.name]) ? entry[field.name].length > 0 : !!entry[field.name];
-      checks.push({
-        ok: hasValue,
-        text: `Eintrag ${idx + 1}: Pflichtfeld '${field.name}' ist gesetzt`
-      });
+      const hasValue =
+        field.type === "checkbox"
+          ? entry[field.name] === true
+          : Array.isArray(entry[field.name])
+            ? entry[field.name].length > 0
+            : !!entry[field.name];
+
+      checks.push({ ok: hasValue, text: `Eintrag ${idx + 1}: Pflichtfeld '${field.name}' ist gesetzt` });
     });
 
-    if (entry.date) {
-      checks.push({ ok: dateRegex.test(entry.date), text: `Eintrag ${idx + 1}: date hat Format TT.MM.JJJJ` });
-    }
-    if (entry.publishAt) {
-      checks.push({ ok: windowRegex.test(entry.publishAt), text: `Eintrag ${idx + 1}: publishAt hat Format JJJJ-MM-TT-HH:mm` });
-    }
-    if (entry.deleteAt) {
-      checks.push({ ok: windowRegex.test(entry.deleteAt), text: `Eintrag ${idx + 1}: deleteAt hat Format JJJJ-MM-TT-HH:mm` });
-    }
+    if (entry.date) checks.push({ ok: dateRegex.test(entry.date), text: `Eintrag ${idx + 1}: date hat Format TT.MM.JJJJ` });
+    if (entry.publishAt) checks.push({ ok: windowRegex.test(entry.publishAt), text: `Eintrag ${idx + 1}: publishAt hat Format JJJJ-MM-TT-HH:mm` });
+    if (entry.deleteAt) checks.push({ ok: windowRegex.test(entry.deleteAt), text: `Eintrag ${idx + 1}: deleteAt hat Format JJJJ-MM-TT-HH:mm` });
+
     if (entry.publishAt && entry.deleteAt && windowRegex.test(entry.publishAt) && windowRegex.test(entry.deleteAt)) {
       checks.push({
         ok: parseDateWindow(entry.publishAt) < parseDateWindow(entry.deleteAt),
@@ -363,10 +357,7 @@ function validate(entries, typeKey) {
 
     if (Array.isArray(entry.links)) {
       entry.links.forEach((link, linkIdx) => {
-        checks.push({
-          ok: !!link.url,
-          text: `Eintrag ${idx + 1}, Link ${linkIdx + 1}: url ist gesetzt`
-        });
+        checks.push({ ok: !!link.url, text: `Eintrag ${idx + 1}, Link ${linkIdx + 1}: url ist gesetzt` });
       });
     }
   });
@@ -391,6 +382,108 @@ function renderValidation(checks) {
   }
 }
 
+function collapseAllEntries() {
+  entriesEl.querySelectorAll(".entry").forEach((entry) => {
+    entry.classList.add("is-collapsed");
+    const editBtn = entry.querySelector(".edit-btn");
+    const doneBtn = entry.querySelector(".done-btn");
+    if (editBtn) editBtn.classList.remove("hidden");
+    if (doneBtn) doneBtn.classList.add("hidden");
+  });
+}
+
+function expandEntry(entryEl) {
+  collapseAllEntries();
+  entryEl.classList.remove("is-collapsed");
+  entryEl.querySelector(".edit-btn")?.classList.add("hidden");
+  entryEl.querySelector(".done-btn")?.classList.remove("hidden");
+}
+
+function getEntrySummary(data, typeKey, index) {
+  const summaryKeys = specs[typeKey].summaryKeys || [];
+  const parts = summaryKeys.map((key) => data[key]).filter(Boolean);
+  if (parts.length === 0) return `Eintrag ${index + 1}`;
+  return `Eintrag ${index + 1}: ${parts.join(" | ")}`;
+}
+
+function refreshEntrySummary(entryEl, index) {
+  const data = readEntry(entryEl);
+  const summaryEl = entryEl.querySelector(".entry-summary");
+  summaryEl.textContent = getEntrySummary(data, typeSelect.value, index);
+}
+
+function renumberAndRefreshSummaries() {
+  [...entriesEl.querySelectorAll(".entry")].forEach((entry, index) => {
+    refreshEntrySummary(entry, index);
+  });
+}
+
+function addEntry(defaults = {}, { expand = true } = {}) {
+  const typeKey = typeSelect.value;
+  const spec = specs[typeKey];
+
+  const entry = document.createElement("article");
+  entry.className = "entry";
+
+  const header = document.createElement("div");
+  header.className = "entry-header";
+
+  const summary = document.createElement("p");
+  summary.className = "entry-summary";
+  summary.textContent = "Neuer Eintrag";
+
+  const actions = document.createElement("div");
+  actions.className = "entry-actions";
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.textContent = "Bearbeiten";
+  editBtn.className = "edit-btn hidden";
+  editBtn.addEventListener("click", () => expandEntry(entry));
+
+  const doneBtn = document.createElement("button");
+  doneBtn.type = "button";
+  doneBtn.textContent = "Fertig";
+  doneBtn.className = "done-btn";
+  doneBtn.addEventListener("click", () => {
+    collapseAllEntries();
+    renumberAndRefreshSummaries();
+  });
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.textContent = "Eintrag löschen";
+  deleteBtn.addEventListener("click", () => {
+    entry.remove();
+    renumberAndRefreshSummaries();
+    generateJson();
+  });
+
+  actions.append(editBtn, doneBtn, deleteBtn);
+  header.append(summary, actions);
+
+  const body = document.createElement("div");
+  body.className = "entry-body";
+
+  spec.fields.forEach((field) => {
+    if (field.type === "list" || field.type === "pairList") {
+      body.append(createListBlock(field, defaults[field.name]));
+    } else {
+      const { wrapper } = createInput(field, defaults[field.name]);
+      body.append(wrapper);
+    }
+  });
+
+  entry.append(header, body);
+  entriesEl.append(entry);
+
+  if (expand) expandEntry(entry);
+  else collapseAllEntries();
+
+  renumberAndRefreshSummaries();
+  generateJson();
+}
+
 function generateJson() {
   const entries = [...entriesEl.querySelectorAll(".entry")].map(readEntry);
   const checks = validate(entries, typeSelect.value);
@@ -398,43 +491,109 @@ function generateJson() {
   outputEl.textContent = JSON.stringify(entries, null, 2);
 }
 
+function renderEntries(typeKey, dataList = null) {
+  entriesEl.innerHTML = "";
+  const spec = specs[typeKey];
+  const defaults = Array.isArray(dataList) && dataList.length > 0 ? dataList : [spec.template];
+
+  defaults.forEach((item, index) => addEntry(item, { expand: index === 0 }));
+  if (defaults.length > 1) collapseAllEntries();
+  renumberAndRefreshSummaries();
+  generateJson();
+}
+
+function getFetchUrl() {
+  const base = baseUrlInput.value.trim().replace(/\/$/, "");
+  if (!base) return null;
+
+  if (typeSelect.value === "gallery") {
+    const galleryName = galleryNameInput.value.trim() || "home-gallery";
+    return `${base}/src/data/gallerys/${galleryName}.json`;
+  }
+
+  return `${base}/src/data/${specs[typeSelect.value].filename}`;
+}
+
+async function loadOnlineJson() {
+  const url = getFetchUrl();
+  if (!url) return;
+
+  const previousText = loadOnlineBtn.textContent;
+  loadOnlineBtn.textContent = "Lade...";
+  loadOnlineBtn.disabled = true;
+
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    if (!Array.isArray(json)) throw new Error("Top-Level ist kein Array");
+
+    renderEntries(typeSelect.value, json);
+    loadOnlineBtn.textContent = "Online JSON geladen";
+  } catch (error) {
+    loadOnlineBtn.textContent = `Fehler beim Laden (${error.message})`;
+  } finally {
+    setTimeout(() => {
+      loadOnlineBtn.textContent = previousText;
+      loadOnlineBtn.disabled = false;
+    }, 1600);
+  }
+}
+
 typeSelect.addEventListener("change", () => {
+  updateTypeDependentUi();
   renderEntries(typeSelect.value);
-  generateJson();
 });
 
-addEntryBtn.addEventListener("click", () => {
-  addEntry();
-  generateJson();
-});
-
+addEntryBtn.addEventListener("click", () => addEntry());
 generateBtn.addEventListener("click", generateJson);
+loadOnlineBtn.addEventListener("click", loadOnlineJson);
+
+galleryNameInput.addEventListener("input", () => {
+  if (typeSelect.value === "gallery") generateJson();
+});
 
 copyBtn.addEventListener("click", async () => {
   if (!outputEl.textContent.trim()) generateJson();
   try {
     await navigator.clipboard.writeText(outputEl.textContent);
     copyBtn.textContent = "Kopiert";
-    setTimeout(() => (copyBtn.textContent = "JSON kopieren"), 1500);
   } catch {
     copyBtn.textContent = "Kopieren fehlgeschlagen";
-    setTimeout(() => (copyBtn.textContent = "JSON kopieren"), 1500);
   }
+
+  setTimeout(() => {
+    copyBtn.textContent = "JSON kopieren";
+  }, 1500);
 });
 
 downloadBtn.addEventListener("click", () => {
   if (!outputEl.textContent.trim()) generateJson();
-  const typeKey = typeSelect.value;
+
   const blob = new Blob([outputEl.textContent], { type: "application/json;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = specs[typeKey].filename;
+
+  if (typeSelect.value === "gallery") {
+    const galleryName = galleryNameInput.value.trim() || "home-gallery";
+    a.download = `${galleryName}.json`;
+  } else {
+    a.download = specs[typeSelect.value].filename;
+  }
+
   a.click();
   URL.revokeObjectURL(a.href);
 });
 
-entriesEl.addEventListener("input", () => generateJson());
+entriesEl.addEventListener("input", (event) => {
+  const entryEl = event.target.closest(".entry");
+  if (entryEl) {
+    const index = [...entriesEl.querySelectorAll(".entry")].indexOf(entryEl);
+    refreshEntrySummary(entryEl, index);
+  }
+  generateJson();
+});
 
 typeSelect.value = "news";
+updateTypeDependentUi();
 renderEntries("news");
-generateJson();

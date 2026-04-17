@@ -14,8 +14,26 @@
       </p>
 
       <section class="panel controls">
-        <label for="typeSelect">Dateityp</label>
-        <select id="typeSelect"></select>
+        <div class="grid-2">
+          <div>
+            <label for="typeSelect">Dateityp</label>
+            <select id="typeSelect"></select>
+          </div>
+          <div id="galleryNameWrap" class="hidden">
+            <label for="galleryNameInput">Galerie-Dateiname (ohne .json)</label>
+            <input id="galleryNameInput" type="text" value="home-gallery" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="baseUrlInput">Basis-URL für Online-Daten</label>
+            <input id="baseUrlInput" type="text" value="https://richti03.github.io/skvstatic" />
+          </div>
+          <div class="align-end">
+            <button id="loadOnlineBtn" type="button">Online JSON laden</button>
+          </div>
+        </div>
 
         <div class="actions">
           <button id="addEntryBtn" type="button">Eintrag hinzufügen</button>
@@ -40,10 +58,6 @@
         <pre id="output" aria-live="polite"></pre>
       </section>
     </main>
-
-    <template id="entryTemplate">
-      <article class="entry"></article>
-    </template>
 
     <script src="app.js"></script>
   </body>
