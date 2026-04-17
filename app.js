@@ -7,7 +7,7 @@ const CONFIG = {
 
 const linkLabelOptions = [
   { value: "", label: "Bitte wählen", type: "" },
-  { value: "Mehr", label: "Mehr erfahren", type: "more" },
+  { value: "Mehr erfahren", label: "Mehr erfahren", type: "more" },
   { value: "Instagram", label: "Instagram", type: "instagram" },
   { value: "Facebook", label: "Facebook", type: "facebook" },
   { value: "TikTok", label: "TikTok", type: "tiktok" },
@@ -114,7 +114,7 @@ const specs = {
     fields: [
       { name: "name", type: "text", required: true },
       { name: "role", type: "text", required: true },
-      { name: "image", type: "text", required: true, filenameOnly: true, pathPrefix: "src/img/verein/vorstand/" },
+      { name: "image", type: "text", required: true, filenameOnly: true, pathPrefix: "./src/img/verein/vorstand/" },
       { name: "tags", type: "csv", required: true, placeholder: "Tag1, Tag2" },
       { name: "description", type: "textarea", required: true },
       {
@@ -132,7 +132,7 @@ const specs = {
     template: {
       name: "Max Mustermann",
       role: "Präsident",
-      image: "src/img/verein/vorstand/max-mustermann.png",
+      image: "./src/img/verein/vorstand/max-mustermann.png",
       tags: ["Leitung"],
       description: "Kurztext",
       socials: [{ label: "E-Mail", href: "mailto:max@example.org", className: "liEmail", icon: "@" }]
@@ -652,6 +652,8 @@ function readEntry(entryEl) {
   const data = {};
 
   entryEl.querySelectorAll("input[data-field], textarea[data-field], select[data-field]").forEach((input) => {
+    if (input.dataset.subField) return;
+
     const name = input.dataset.field;
     const type = input.dataset.fieldType;
 
