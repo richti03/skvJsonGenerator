@@ -130,6 +130,15 @@ select {
   border-bottom: 1px solid #bfd5f6;
 }
 
+.entry.is-expired-news {
+  border-color: #facc15;
+}
+
+.entry.is-expired-news .entry-header {
+  background: #fef9c3;
+  border-bottom-color: #facc15;
+}
+
 .entry-summary {
   margin: 0;
   font-weight: 600;
