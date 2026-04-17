@@ -197,6 +197,8 @@ const specs = {
 const typeSelect = document.querySelector("#typeSelect");
 const galleryNameWrap = document.querySelector("#galleryNameWrap");
 const galleryNameInput = document.querySelector("#galleryNameInput");
+const confirmGalleryBtn = document.querySelector("#confirmGalleryBtn");
+const galleryConfirmHint = document.querySelector("#galleryConfirmHint");
 const loadOnlineBtn = document.querySelector("#loadOnlineBtn");
 const entriesEl = document.querySelector("#entries");
 const outputEl = document.querySelector("#output");
@@ -208,6 +210,9 @@ const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 const resultActions = document.querySelector("#resultActions");
 const scrollTopBtn = document.querySelector("#scrollTopBtn");
+const DEFAULT_GALLERY_NAME = "home-gallery";
+let confirmedGalleryName = "";
+let galleryNameConfirmed = false;
 
 function appendOption(key) {
   const opt = document.createElement("option");
@@ -278,6 +283,75 @@ function toCurrencyInputValue(value) {
 
 function updateTypeDependentUi() {
   galleryNameWrap.classList.toggle("hidden", typeSelect.value !== "gallery");
+  updateGalleryConfirmationState();
+}
+
+function normalizeGalleryName(value) {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/\.json$/i, "");
+}
+
+function getActiveGalleryName() {
+  return confirmedGalleryName || normalizeGalleryName(galleryNameInput.value) || DEFAULT_GALLERY_NAME;
+}
+
+function getGalleryImagePrefix() {
+  return `./src/img/gallerys/${getActiveGalleryName()}/`;
+}
+
+function hasEntries() {
+  return entriesEl.querySelectorAll(".entry").length > 0;
+}
+
+function setGalleryHint(text, { warning = false } = {}) {
+  if (!galleryConfirmHint) return;
+  galleryConfirmHint.textContent = text;
+  galleryConfirmHint.classList.toggle("is-warning", warning);
+}
+
+function updateGalleryConfirmationState() {
+  const isGalleryType = typeSelect.value === "gallery";
+  const currentName = normalizeGalleryName(galleryNameInput?.value);
+  const needsConfirmation = isGalleryType && (!galleryNameConfirmed || currentName !== confirmedGalleryName);
+
+  loadOnlineBtn.disabled = needsConfirmation;
+  addEntryBtn.disabled = needsConfirmation;
+
+  if (!isGalleryType) {
+    setGalleryHint("Bitte Ordnernamen bestätigen, bevor Einträge geladen oder erstellt werden.");
+    return;
+  }
+
+  if (needsConfirmation) {
+    setGalleryHint("Bitte den Ordnernamen bestätigen. Danach kannst du Online-JSON laden oder Einträge hinzufügen.", { warning: true });
+    return;
+  }
+
+  setGalleryHint(`Ordner bestätigt: ${confirmedGalleryName}. Du kannst jetzt laden oder Einträge hinzufügen.`);
+}
+
+function confirmGalleryName() {
+  if (typeSelect.value !== "gallery") return;
+  const normalizedName = normalizeGalleryName(galleryNameInput.value) || DEFAULT_GALLERY_NAME;
+  const isNameChange = galleryNameConfirmed && normalizedName !== confirmedGalleryName;
+
+  if (isNameChange && hasEntries()) {
+    const shouldClearEntries = window.confirm(
+      `Der Ordner wurde geändert von "${confirmedGalleryName}" auf "${normalizedName}". Alle aktuellen Einträge werden gelöscht. Fortfahren?`
+    );
+    if (!shouldClearEntries) {
+      galleryNameInput.value = confirmedGalleryName;
+      updateGalleryConfirmationState();
+      return;
+    }
+    renderEntries("gallery");
+  }
+
+  confirmedGalleryName = normalizedName;
+  galleryNameConfirmed = true;
+  galleryNameInput.value = normalizedName;
+  updateGalleryConfirmationState();
 }
 
 function clearResult() {
@@ -310,6 +384,30 @@ function getFilenameOnly(value) {
   const trimmed = value.trim();
   if (!trimmed) return "";
   return trimmed.split(/[\\/]/).pop() || "";
+}
+
+function updateImagePreviewForInput(input) {
+  if (!input || input.dataset.filenameOnly !== "true") return;
+  const previewEl = input.closest(".form-field")?.querySelector(".image-preview");
+  if (!previewEl) return;
+
+  const filename = getFilenameOnly(input.value);
+  const pathPrefix = input.dataset.pathPrefix || "";
+  if (!filename || !pathPrefix) {
+    previewEl.classList.add("hidden");
+    previewEl.removeAttribute("src");
+    delete previewEl.dataset.fallbackSrc;
+    return;
+  }
+
+  const relativeSrc = `${pathPrefix}${filename}`;
+  const normalizedRelative = relativeSrc.replace(/^\.\//, "");
+  const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${normalizedRelative}`;
+
+  previewEl.dataset.fallbackSrc = relativeSrc;
+  previewEl.src = absoluteSrc;
+  previewEl.alt = `Vorschau ${filename}`;
+  previewEl.classList.remove("hidden");
 }
 
 function createInput(field, value) {
@@ -388,6 +486,27 @@ function createInput(field, value) {
   if (field.filenameOnly) input.dataset.filenameOnly = "true";
   if (field.pathPrefix) input.dataset.pathPrefix = field.pathPrefix;
   if (field.allowAuto) input.dataset.allowAuto = "true";
+
+  if (field.filenameOnly) {
+    const preview = document.createElement("img");
+    preview.className = "image-preview hidden";
+    preview.loading = "lazy";
+    preview.decoding = "async";
+    preview.alt = "Bildvorschau";
+    preview.addEventListener("error", () => {
+      const fallbackSrc = preview.dataset.fallbackSrc;
+      if (fallbackSrc && preview.src !== fallbackSrc) {
+        preview.src = fallbackSrc;
+        delete preview.dataset.fallbackSrc;
+        return;
+      }
+      preview.classList.add("hidden");
+      preview.removeAttribute("src");
+      delete preview.dataset.fallbackSrc;
+    });
+    wrapper.append(preview);
+    updateImagePreviewForInput(input);
+  }
 
   return { wrapper, input };
 }
@@ -892,11 +1011,15 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   body.className = "entry-body";
 
   spec.fields.forEach((field) => {
+    const effectiveField = typeKey === "gallery" && field.name === "src"
+      ? { ...field, pathPrefix: getGalleryImagePrefix() }
+      : field;
+
     if (field.type === "autoDeleteAt") return;
     if (field.type === "list" || field.type === "pairList") {
-      body.append(createListBlock(field, defaults[field.name]));
+      body.append(createListBlock(effectiveField, defaults[field.name]));
     } else {
-      const { wrapper } = createInput(field, defaults[field.name]);
+      const { wrapper } = createInput(effectiveField, defaults[field.name]);
       body.append(wrapper);
     }
   });
@@ -960,7 +1083,7 @@ function getFetchUrl() {
   const base = CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "");
 
   if (typeSelect.value === "gallery") {
-    const galleryName = galleryNameInput.value.trim() || "home-gallery";
+    const galleryName = getActiveGalleryName();
     return `${base}/src/data/gallerys/${galleryName}.json`;
   }
 
@@ -1004,6 +1127,9 @@ async function loadOnlineJson() {
 }
 
 typeSelect.addEventListener("change", () => {
+  if (typeSelect.value === "gallery" && !galleryNameConfirmed) {
+    galleryNameInput.value = DEFAULT_GALLERY_NAME;
+  }
   updateTypeDependentUi();
   renderEntries(typeSelect.value);
 });
@@ -1015,9 +1141,12 @@ addEntryBtn.addEventListener("click", () => {
 
 generateBtn.addEventListener("click", validateAndGenerate);
 loadOnlineBtn.addEventListener("click", loadOnlineJson);
+confirmGalleryBtn.addEventListener("click", confirmGalleryName);
 
 galleryNameInput.addEventListener("input", () => {
-  if (typeSelect.value === "gallery") resetValidationUi();
+  if (typeSelect.value !== "gallery") return;
+  updateGalleryConfirmationState();
+  resetValidationUi();
 });
 
 copyBtn.addEventListener("click", async () => {
@@ -1042,7 +1171,7 @@ downloadBtn.addEventListener("click", () => {
   a.href = URL.createObjectURL(blob);
 
   if (typeSelect.value === "gallery") {
-    const galleryName = galleryNameInput.value.trim() || "home-gallery";
+    const galleryName = getActiveGalleryName();
     a.download = `${galleryName}.json`;
   } else {
     a.download = specs[typeSelect.value].filename;
@@ -1064,6 +1193,7 @@ window.addEventListener("scroll", () => {
 entriesEl.addEventListener("input", (event) => {
   const entryEl = event.target.closest(".entry");
   if (entryEl) {
+    updateImagePreviewForInput(event.target);
     if (event.target.dataset.field === "deleteAt") {
       event.target.dataset.autoManaged = "false";
     }
