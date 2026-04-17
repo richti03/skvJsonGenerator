@@ -404,13 +404,6 @@ function updateImagePreviewForInput(input) {
   const normalizedRelative = relativeSrc.replace(/^\.\//, "");
   const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${normalizedRelative}`;
 
-  console.info("[image-preview] Ladepfade", {
-    field: input.dataset.field || null,
-    filename,
-    absoluteSrc,
-    relativeSrc
-  });
-
   previewEl.dataset.fallbackSrc = relativeSrc;
   previewEl.src = absoluteSrc;
   previewEl.alt = `Vorschau ${filename}`;
@@ -503,15 +496,10 @@ function createInput(field, value) {
     preview.addEventListener("error", () => {
       const fallbackSrc = preview.dataset.fallbackSrc;
       if (fallbackSrc && preview.src !== fallbackSrc) {
-        console.warn("[image-preview] Primärer Pfad fehlgeschlagen, nutze Fallback", {
-          failedSrc: preview.src,
-          fallbackSrc
-        });
         preview.src = fallbackSrc;
         delete preview.dataset.fallbackSrc;
         return;
       }
-      console.error("[image-preview] Bildvorschau fehlgeschlagen", { src: preview.src });
       preview.classList.add("hidden");
       preview.removeAttribute("src");
       delete preview.dataset.fallbackSrc;
