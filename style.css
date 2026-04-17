@@ -108,11 +108,13 @@ select {
 .entry-summary {
   margin: 0;
   font-weight: 600;
+  flex: 1;
 }
 
 .entry-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .entry-body {
@@ -127,6 +129,24 @@ select {
 
 .entry.is-collapsed .entry-header {
   border-bottom: 0;
+}
+
+.entry.is-dragging {
+  opacity: 0.6;
+  border-color: #1d4ed8;
+}
+
+.drag-handle {
+  cursor: grab;
+  min-width: 2.25rem;
+  font-weight: 700;
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #93c5fd;
+}
+
+.drag-handle:hover {
+  background: #bfdbfe;
 }
 
 .list-block {

@@ -521,15 +521,36 @@ function renumberAndRefreshSummaries() {
   });
 }
 
+function moveEntry(entryEl, direction) {
+  if (direction < 0) {
+    const previous = entryEl.previousElementSibling;
+    if (previous) entriesEl.insertBefore(entryEl, previous);
+  } else {
+    const next = entryEl.nextElementSibling;
+    if (next) entriesEl.insertBefore(next, entryEl);
+  }
+
+  renumberAndRefreshSummaries();
+  resetValidationUi();
+}
+
 function addEntry(defaults = {}, { expand = true } = {}) {
   const typeKey = typeSelect.value;
   const spec = specs[typeKey];
 
   const entry = document.createElement("article");
   entry.className = "entry";
+  entry.draggable = true;
 
   const header = document.createElement("div");
   header.className = "entry-header";
+
+  const dragHandle = document.createElement("button");
+  dragHandle.type = "button";
+  dragHandle.className = "drag-handle";
+  dragHandle.textContent = "↕";
+  dragHandle.title = "Eintrag per Drag & Drop verschieben";
+  dragHandle.setAttribute("aria-label", "Eintrag per Drag & Drop verschieben");
 
   const summary = document.createElement("p");
   summary.className = "entry-summary";
@@ -562,8 +583,22 @@ function addEntry(defaults = {}, { expand = true } = {}) {
     resetValidationUi();
   });
 
-  actions.append(editBtn, doneBtn, deleteBtn);
-  header.append(summary, actions);
+  const moveUpBtn = document.createElement("button");
+  moveUpBtn.type = "button";
+  moveUpBtn.textContent = "↑";
+  moveUpBtn.title = "Eintrag nach oben";
+  moveUpBtn.setAttribute("aria-label", "Eintrag nach oben");
+  moveUpBtn.addEventListener("click", () => moveEntry(entry, -1));
+
+  const moveDownBtn = document.createElement("button");
+  moveDownBtn.type = "button";
+  moveDownBtn.textContent = "↓";
+  moveDownBtn.title = "Eintrag nach unten";
+  moveDownBtn.setAttribute("aria-label", "Eintrag nach unten");
+  moveDownBtn.addEventListener("click", () => moveEntry(entry, 1));
+
+  actions.append(editBtn, doneBtn, moveUpBtn, moveDownBtn, deleteBtn);
+  header.append(dragHandle, summary, actions);
 
   const body = document.createElement("div");
   body.className = "entry-body";
@@ -713,6 +748,55 @@ entriesEl.addEventListener("input", (event) => {
     const index = [...entriesEl.querySelectorAll(".entry")].indexOf(entryEl);
     refreshEntrySummary(entryEl, index);
   }
+  resetValidationUi();
+});
+
+function getDragInsertBefore(container, pointerY) {
+  const draggableEntries = [...container.querySelectorAll(".entry:not(.is-dragging)")];
+
+  return draggableEntries.reduce(
+    (closest, current) => {
+      const box = current.getBoundingClientRect();
+      const offset = pointerY - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: current };
+      }
+      return closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, element: null }
+  ).element;
+}
+
+entriesEl.addEventListener("dragstart", (event) => {
+  const entry = event.target.closest(".entry");
+  if (!entry) return;
+  const handle = event.target.closest(".drag-handle");
+  if (!handle) {
+    event.preventDefault();
+    return;
+  }
+
+  entry.classList.add("is-dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", "entry");
+});
+
+entriesEl.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  const dragging = entriesEl.querySelector(".entry.is-dragging");
+  if (!dragging) return;
+
+  const insertBeforeEl = getDragInsertBefore(entriesEl, event.clientY);
+  if (!insertBeforeEl) entriesEl.append(dragging);
+  else entriesEl.insertBefore(dragging, insertBeforeEl);
+});
+
+entriesEl.addEventListener("dragend", (event) => {
+  const entry = event.target.closest(".entry");
+  if (!entry) return;
+
+  entry.classList.remove("is-dragging");
+  renumberAndRefreshSummaries();
   resetValidationUi();
 });
 
