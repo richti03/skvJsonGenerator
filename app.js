@@ -168,12 +168,14 @@ const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 const resultActions = document.querySelector("#resultActions");
 
-Object.keys(specs).forEach((key) => {
+function appendOption(key) {
   const opt = document.createElement("option");
   opt.value = key;
   opt.textContent = `${key} (${specs[key].filename})`;
   typeSelect.append(opt);
-});
+}
+
+Object.keys(specs).forEach((key) => appendOption(key));
 
 const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
 const windowRegex = /^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}$/;
@@ -570,9 +572,10 @@ function moveEntry(entryEl, direction) {
   resetValidationUi();
 }
 
-function addEntry(defaults = {}, { expand = true } = {}) {
+function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry = true } = {}) {
   const typeKey = typeSelect.value;
   const spec = specs[typeKey];
+  const shouldPrepend = insert === "start" || (insert === "auto" && (typeKey === "news" || typeKey === "royals"));
 
   const entry = document.createElement("article");
   entry.className = "entry";
@@ -584,7 +587,7 @@ function addEntry(defaults = {}, { expand = true } = {}) {
   const dragHandle = document.createElement("button");
   dragHandle.type = "button";
   dragHandle.className = "drag-handle";
-  dragHandle.textContent = "↕";
+  dragHandle.textContent = "☰";
   dragHandle.title = "Eintrag per Drag & Drop verschieben";
   dragHandle.setAttribute("aria-label", "Eintrag per Drag & Drop verschieben");
 
@@ -649,12 +652,17 @@ function addEntry(defaults = {}, { expand = true } = {}) {
   });
 
   entry.append(header, body);
-  entriesEl.append(entry);
+  if (shouldPrepend) entriesEl.prepend(entry);
+  else entriesEl.append(entry);
 
   if (expand) expandEntry(entry);
   else collapseAllEntries();
 
   renumberAndRefreshSummaries();
+
+  if (scrollToEntry) {
+    entry.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function validateAndGenerate() {
@@ -677,7 +685,11 @@ function renderEntries(typeKey, dataList = null) {
   const spec = specs[typeKey];
   const defaults = Array.isArray(dataList) && dataList.length > 0 ? dataList : [spec.template];
 
-  defaults.forEach((item, index) => addEntry(item, { expand: index === 0 }));
+  defaults.forEach((item, index) => addEntry(item, {
+    expand: index === 0,
+    insert: "end",
+    scrollToEntry: false
+  }));
   if (defaults.length > 1) collapseAllEntries();
   renumberAndRefreshSummaries();
 }
