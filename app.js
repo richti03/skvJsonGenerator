@@ -47,14 +47,14 @@ const specs = {
     fields: [
       { name: "title", type: "text", required: true },
       { name: "date", type: "date", required: true },
-      { name: "time", type: "text" },
-      { name: "einlass", type: "text" },
-      { name: "preis", type: "text" },
+      { name: "time", type: "time" },
+      { name: "einlass", type: "time" },
+      { name: "preis", type: "currency" },
       { name: "location", type: "text" },
       { name: "description", type: "textarea" },
       { name: "image", type: "text", filenameOnly: true, pathPrefix: "./src/img/events/" },
       { name: "publishAt", type: "datetime", placeholder: "JJJJ-MM-TT-HH:mm" },
-      { name: "deleteAt", type: "datetime", required: true, placeholder: "JJJJ-MM-TT-HH:mm" },
+      { name: "deleteAt", type: "autoDeleteAt", required: true },
       {
         name: "links",
         type: "list",
@@ -70,7 +70,7 @@ const specs = {
       time: "11:11 Uhr",
       location: "Rathaus",
       publishAt: "2026-10-01-00:00",
-      deleteAt: "2026-11-12-00:00"
+      deleteAt: "2026-11-11-23:59"
     }
   },
   vorstand: {
@@ -225,6 +225,25 @@ function fromDateTimeInputValue(value) {
   return `${datePart}-${timePart}`;
 }
 
+function toTimeInputValue(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{2}:\d{2})(?:\s*Uhr)?$/i);
+  return match ? match[1] : "";
+}
+
+function fromTimeInputValue(value) {
+  if (typeof value !== "string" || !value) return "";
+  const match = value.match(/^\d{2}:\d{2}$/);
+  if (!match) return "";
+  return `${value} Uhr`;
+}
+
+function toCurrencyInputValue(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s*€\s*$/, "").trim();
+}
+
 function updateTypeDependentUi() {
   galleryNameWrap.classList.toggle("hidden", typeSelect.value !== "gallery");
 }
@@ -245,6 +264,8 @@ function toInputValue(value, fieldType) {
   if (fieldType === "checkbox") return !!value;
   if (fieldType === "date") return toDateInputValue(value);
   if (fieldType === "datetime") return toDateTimeInputValue(value);
+  if (fieldType === "time") return toTimeInputValue(value);
+  if (fieldType === "currency") return toCurrencyInputValue(value);
   if (fieldType === "textarea") {
     if (Array.isArray(value)) return value.join("\n\n");
     if (value && typeof value === "object") return JSON.stringify(value, null, 2);
@@ -285,6 +306,10 @@ function createInput(field, value) {
     input = document.createElement("input");
     input.type = "datetime-local";
     input.value = toInputValue(normalizedValue, field.type);
+  } else if (field.type === "time") {
+    input = document.createElement("input");
+    input.type = "time";
+    input.value = toInputValue(normalizedValue, field.type);
   } else if (field.type === "select") {
     input = document.createElement("select");
     const options = Array.isArray(field.options) ? field.options : [];
@@ -306,7 +331,16 @@ function createInput(field, value) {
   input.dataset.fieldType = field.type;
   input.dataset.required = String(!!field.required);
 
-  if (field.filenameOnly && field.pathPrefix && field.type !== "textarea" && field.type !== "checkbox") {
+  if (field.type === "currency") {
+    const inputWithPrefix = document.createElement("div");
+    inputWithPrefix.className = "input-with-prefix";
+
+    const prefix = document.createElement("span");
+    prefix.className = "input-prefix";
+    prefix.textContent = "€";
+    inputWithPrefix.append(prefix, input);
+    wrapper.append(inputWithPrefix);
+  } else if (field.filenameOnly && field.pathPrefix && field.type !== "textarea" && field.type !== "checkbox") {
     const inputWithPrefix = document.createElement("div");
     inputWithPrefix.className = "input-with-prefix";
 
@@ -454,6 +488,18 @@ function readEntry(entryEl) {
       return;
     }
 
+    if (type === "time") {
+      data[name] = fromTimeInputValue(value);
+      return;
+    }
+
+    if (type === "currency") {
+      const normalizedCurrency = toCurrencyInputValue(value);
+      if (!normalizedCurrency) return;
+      data[name] = `${normalizedCurrency} €`;
+      return;
+    }
+
     if (type === "csv") {
       data[name] = value.split(",").map((part) => part.trim()).filter(Boolean);
       return;
@@ -525,6 +571,15 @@ function calculateNewsDeleteAt(entry) {
   return formatDateWindow(targetDate);
 }
 
+function calculateEventDeleteAt(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const eventDate = entry.date ? parseDate(entry.date) : null;
+  if (!eventDate) return null;
+  const targetDate = new Date(eventDate.getTime());
+  targetDate.setUTCHours(23, 59, 0, 0);
+  return formatDateWindow(targetDate);
+}
+
 function updateNewsDeleteAt(entryEl) {
   if (typeSelect.value !== "news") return;
   const deleteInput = entryEl.querySelector('[data-field="deleteAt"]');
@@ -542,14 +597,16 @@ function updateNewsDeleteAt(entryEl) {
   deleteInput.dataset.autoManaged = "true";
 }
 
+function updateEventDeleteAt(entryData) {
+  if (typeSelect.value !== "events") return entryData;
+  const calculatedDeleteAt = calculateEventDeleteAt(entryData);
+  if (!calculatedDeleteAt) return entryData;
+  return { ...entryData, deleteAt: calculatedDeleteAt };
+}
+
 function syncEntryExpiredState(entryEl) {
   if (!entryEl) return;
-  if (typeSelect.value !== "news") {
-    entryEl.classList.remove("is-expired-news");
-    return;
-  }
-
-  const entryData = readEntry(entryEl);
+  const entryData = updateEventDeleteAt(readEntry(entryEl));
   const deleteDate = entryData.deleteAt ? parseDateWindow(entryData.deleteAt) : null;
   const isExpired = deleteDate instanceof Date && !Number.isNaN(deleteDate.getTime()) && deleteDate.getTime() < Date.now();
   entryEl.classList.toggle("is-expired-news", isExpired);
@@ -602,8 +659,10 @@ function validate(entries, typeKey) {
       }
 
       if (!field.required) return;
+      if (field.type === "autoDeleteAt") return;
 
       const input = entryEl.querySelector(`[data-field="${field.name}"]`);
+      if (!input) return;
       const hasValue = field.type === "checkbox" ? input.checked : !!input.value.trim();
       if (!hasValue) {
         errors.push({ text: `Eintrag ${idx + 1}: Pflichtfeld '${field.name}' ist leer.`, element: input });
@@ -623,6 +682,13 @@ function validate(entries, typeKey) {
     if (entry.deleteAt && !windowRegex.test(entry.deleteAt)) {
       const input = entryEl.querySelector('[data-field="deleteAt"]');
       errors.push({ text: `Eintrag ${idx + 1}: deleteAt hat nicht das Format JJJJ-MM-TT-HH:mm.`, element: input });
+    }
+
+    if (typeKey === "events" && entry.preis) {
+      const preisInput = entryEl.querySelector('[data-field="preis"]');
+      if (!/^\d+(?:[.,]\d{2})\s€$/.test(entry.preis)) {
+        errors.push({ text: `Eintrag ${idx + 1}: preis muss genau zwei Nachkommastellen haben (z. B. 12,00 €).`, element: preisInput });
+      }
     }
 
     if (entry.publishAt && entry.deleteAt && windowRegex.test(entry.publishAt) && windowRegex.test(entry.deleteAt)) {
@@ -782,6 +848,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   body.className = "entry-body";
 
   spec.fields.forEach((field) => {
+    if (field.type === "autoDeleteAt") return;
     if (field.type === "list" || field.type === "pairList") {
       body.append(createListBlock(field, defaults[field.name]));
     } else {
@@ -811,7 +878,7 @@ function validateAndGenerate() {
   const entries = [...entriesEl.querySelectorAll(".entry")].map((entryEl) => {
     updateNewsDeleteAt(entryEl);
     syncEntryExpiredState(entryEl);
-    return readEntry(entryEl);
+    return updateEventDeleteAt(readEntry(entryEl));
   });
   const errors = validate(entries, typeSelect.value);
   renderValidation(errors);
