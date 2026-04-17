@@ -820,12 +820,17 @@ function validateAndGenerate() {
   }
 }
 
-function renderEntries(typeKey, dataList = null) {
+function renderEntries(typeKey, dataList = null, { useTemplate = false } = {}) {
   entriesEl.innerHTML = "";
   resetValidationUi();
 
-  const spec = specs[typeKey];
-  const defaults = Array.isArray(dataList) && dataList.length > 0 ? dataList : [spec.template];
+  const defaults = Array.isArray(dataList) && dataList.length > 0
+    ? dataList
+    : useTemplate
+      ? [specs[typeKey].template]
+      : [];
+
+  if (defaults.length === 0) return;
 
   defaults.forEach((item, index) => addEntry(item, {
     expand: index === 0,
