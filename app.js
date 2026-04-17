@@ -990,21 +990,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
     resetValidationUi();
   });
 
-  const moveUpBtn = document.createElement("button");
-  moveUpBtn.type = "button";
-  moveUpBtn.textContent = "↑";
-  moveUpBtn.title = "Eintrag nach oben";
-  moveUpBtn.setAttribute("aria-label", "Eintrag nach oben");
-  moveUpBtn.addEventListener("click", () => moveEntry(entry, -1));
-
-  const moveDownBtn = document.createElement("button");
-  moveDownBtn.type = "button";
-  moveDownBtn.textContent = "↓";
-  moveDownBtn.title = "Eintrag nach unten";
-  moveDownBtn.setAttribute("aria-label", "Eintrag nach unten");
-  moveDownBtn.addEventListener("click", () => moveEntry(entry, 1));
-
-  actions.append(editBtn, doneBtn, moveUpBtn, moveDownBtn, deleteBtn);
+  actions.append(editBtn, doneBtn, deleteBtn);
   header.append(dragHandle, summary, actions);
 
   const body = document.createElement("div");
