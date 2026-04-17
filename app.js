@@ -226,6 +226,19 @@ Object.keys(specs).forEach((key) => appendOption(key));
 const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
 const windowRegex = /^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}$/;
 
+function findLinkOptionByType(typeValue) {
+  if (typeof typeValue !== "string") return null;
+  const normalizedType = typeValue.trim().toLowerCase();
+  if (!normalizedType) return null;
+
+  return (
+    linkLabelOptions.find((option) => option.type.toLowerCase() === normalizedType) ||
+    linkLabelOptions.find((option) => option.value.toLowerCase() === normalizedType) ||
+    linkLabelOptions.find((option) => option.label.toLowerCase() === normalizedType) ||
+    null
+  );
+}
+
 function formatDateWindow(value) {
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}-${String(value.getUTCHours()).padStart(2, "0")}:${String(value.getUTCMinutes()).padStart(2, "0")}`;
 }
@@ -535,7 +548,7 @@ function addListItem(field, container, value = {}, onChange = () => {}) {
 
   const normalizedValue = { ...value };
   if (field.name === "links" && !normalizedValue.label && normalizedValue.type) {
-    const matchingOption = linkLabelOptions.find((option) => option.type === normalizedValue.type);
+    const matchingOption = findLinkOptionByType(normalizedValue.type);
     if (matchingOption) normalizedValue.label = matchingOption.value;
   }
 
