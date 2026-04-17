@@ -292,6 +292,14 @@ function normalizeGalleryName(value) {
   return trimmed.replace(/\.json$/i, "");
 }
 
+function getActiveGalleryName() {
+  return confirmedGalleryName || normalizeGalleryName(galleryNameInput.value) || DEFAULT_GALLERY_NAME;
+}
+
+function getGalleryImagePrefix() {
+  return `./src/img/gallerys/${getActiveGalleryName()}/`;
+}
+
 function hasEntries() {
   return entriesEl.querySelectorAll(".entry").length > 0;
 }
@@ -958,11 +966,15 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   body.className = "entry-body";
 
   spec.fields.forEach((field) => {
+    const effectiveField = typeKey === "gallery" && field.name === "src"
+      ? { ...field, pathPrefix: getGalleryImagePrefix() }
+      : field;
+
     if (field.type === "autoDeleteAt") return;
     if (field.type === "list" || field.type === "pairList") {
-      body.append(createListBlock(field, defaults[field.name]));
+      body.append(createListBlock(effectiveField, defaults[field.name]));
     } else {
-      const { wrapper } = createInput(field, defaults[field.name]);
+      const { wrapper } = createInput(effectiveField, defaults[field.name]);
       body.append(wrapper);
     }
   });
@@ -1026,7 +1038,7 @@ function getFetchUrl() {
   const base = CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "");
 
   if (typeSelect.value === "gallery") {
-    const galleryName = confirmedGalleryName || normalizeGalleryName(galleryNameInput.value) || DEFAULT_GALLERY_NAME;
+    const galleryName = getActiveGalleryName();
     return `${base}/src/data/gallerys/${galleryName}.json`;
   }
 
@@ -1114,7 +1126,7 @@ downloadBtn.addEventListener("click", () => {
   a.href = URL.createObjectURL(blob);
 
   if (typeSelect.value === "gallery") {
-    const galleryName = confirmedGalleryName || normalizeGalleryName(galleryNameInput.value) || DEFAULT_GALLERY_NAME;
+    const galleryName = getActiveGalleryName();
     a.download = `${galleryName}.json`;
   } else {
     a.download = specs[typeSelect.value].filename;
