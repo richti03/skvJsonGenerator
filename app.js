@@ -214,6 +214,12 @@ const downloadBtn = document.querySelector("#downloadBtn");
 const commitBtn = document.querySelector("#commitBtn");
 const resultActions = document.querySelector("#resultActions");
 const commitStatus = document.querySelector("#commitStatus");
+const commitDialog = document.querySelector("#commitDialog");
+const commitForm = document.querySelector("#commitForm");
+const githubUsernameInput = document.querySelector("#githubUsernameInput");
+const githubTokenInput = document.querySelector("#githubTokenInput");
+const commitMessageInput = document.querySelector("#commitMessageInput");
+const cancelCommitDialogBtn = document.querySelector("#cancelCommitDialogBtn");
 const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
 let confirmedGalleryName = "";
@@ -1139,6 +1145,47 @@ async function getExistingFileSha({ owner, repo, path, branch, token }) {
   return payload.sha || null;
 }
 
+function openCommitDialog(defaultMessage) {
+  if (!commitDialog || !commitForm || !githubTokenInput || !commitMessageInput) return Promise.resolve(null);
+  if (typeof commitDialog.showModal !== "function") {
+    const token = window.prompt("GitHub Personal Access Token eingeben:");
+    if (!token) return Promise.resolve(null);
+    const commitMessage = window.prompt("Commit-Message:", defaultMessage);
+    if (!commitMessage) return Promise.resolve(null);
+    return Promise.resolve({ token: token.trim(), commitMessage: commitMessage.trim(), username: "" });
+  }
+
+  commitMessageInput.value = defaultMessage;
+
+  return new Promise((resolve) => {
+    const closeDialog = (result = null) => {
+      commitForm.removeEventListener("submit", handleSubmit);
+      cancelCommitDialogBtn?.removeEventListener("click", handleCancel);
+      commitDialog.removeEventListener("cancel", handleCancel);
+      if (commitDialog.open) commitDialog.close();
+      resolve(result);
+    };
+
+    const handleSubmit = (event) => {
+      event.preventDefault();
+      const token = githubTokenInput.value.trim();
+      const commitMessage = commitMessageInput.value.trim();
+      if (!token || !commitMessage) return;
+      const username = githubUsernameInput?.value?.trim() || "";
+      closeDialog({ token, commitMessage, username });
+    };
+
+    const handleCancel = () => closeDialog(null);
+
+    commitForm.addEventListener("submit", handleSubmit);
+    cancelCommitDialogBtn?.addEventListener("click", handleCancel);
+    commitDialog.addEventListener("cancel", handleCancel);
+    commitDialog.showModal();
+    githubTokenInput.focus();
+    githubTokenInput.select();
+  });
+}
+
 async function commitGeneratedJson() {
   const parsedJson = getOutputJson();
   if (!parsedJson) {
@@ -1151,16 +1198,10 @@ async function commitGeneratedJson() {
   const branch = CONFIG.GITHUB_BRANCH;
   const path = getDataPath();
 
-  const token = window.prompt("GitHub Personal Access Token (classic oder fine-grained) eingeben:");
-  if (!token) {
-    setCommitStatus("Commit abgebrochen: Kein Token eingegeben.", "error");
-    return;
-  }
-
   const defaultMessage = `Update ${path} via SKV JSON Generator`;
-  const commitMessage = window.prompt("Commit-Message:", defaultMessage);
-  if (!commitMessage) {
-    setCommitStatus("Commit abgebrochen: Keine Commit-Message eingegeben.", "error");
+  const commitInput = await openCommitDialog(defaultMessage);
+  if (!commitInput) {
+    setCommitStatus("Commit abgebrochen.", "error");
     return;
   }
 
@@ -1169,10 +1210,10 @@ async function commitGeneratedJson() {
 
   try {
     const normalizedJson = JSON.stringify(parsedJson, null, 2);
-    const sha = await getExistingFileSha({ owner, repo, path, branch, token: token.trim() });
+    const sha = await getExistingFileSha({ owner, repo, path, branch, token: commitInput.token });
 
     const payload = {
-      message: commitMessage,
+      message: commitInput.commitMessage,
       content: toBase64Utf8(`${normalizedJson}\n`),
       branch
     };
@@ -1182,7 +1223,7 @@ async function commitGeneratedJson() {
       method: "PUT",
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token.trim()}`,
+        Authorization: `Bearer ${commitInput.token}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload)

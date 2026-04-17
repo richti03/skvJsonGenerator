@@ -275,6 +275,32 @@ pre {
   color: #991b1b;
 }
 
+.commit-dialog {
+  border: 1px solid #8cb3ea;
+  border-radius: 12px;
+  padding: 0;
+  width: min(560px, calc(100% - 2rem));
+  box-shadow: 0 20px 40px rgba(15, 47, 95, 0.3);
+}
+
+.commit-dialog::backdrop {
+  background: rgba(15, 47, 95, 0.4);
+}
+
+.commit-dialog-form {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+}
+
+.commit-dialog-form h2 {
+  margin-bottom: 0.25rem;
+}
+
+.commit-dialog-form p {
+  margin: 0 0 0.4rem;
+}
+
 .scroll-top-btn {
   position: fixed;
   right: 1rem;
