@@ -57,10 +57,49 @@
         <div id="resultActions" class="actions hidden">
           <button id="copyBtn" type="button">JSON kopieren</button>
           <button id="downloadBtn" type="button">Als Datei herunterladen</button>
+          <button id="commitBtn" type="button">Zu GitHub committen</button>
         </div>
+        <p id="commitStatus" class="commit-status" aria-live="polite"></p>
       </section>
     </main>
     <button id="scrollTopBtn" class="scroll-top-btn hidden" type="button" aria-label="Nach oben scrollen">^</button>
+
+    <dialog id="commitDialog" class="commit-dialog">
+      <form id="commitForm" method="dialog" class="commit-dialog-form" autocomplete="on">
+        <h2>JSON zu GitHub committen</h2>
+        <p>
+          Ziel: <code>richti03/skvstatic</code> · Branch: <code>SkvJsonGenerator</code>
+        </p>
+
+        <label for="githubUsernameInput">GitHub Benutzername</label>
+        <input
+          id="githubUsernameInput"
+          name="username"
+          type="text"
+          autocomplete="username"
+          placeholder="z. B. richti03"
+          required
+        />
+
+        <label for="githubTokenInput">GitHub Personal Access Token</label>
+        <input
+          id="githubTokenInput"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="ghp_... oder github_pat_..."
+          required
+        />
+
+        <label for="commitMessageInput">Commit-Message</label>
+        <input id="commitMessageInput" name="commitMessage" type="text" required />
+
+        <div class="actions">
+          <button type="submit" value="submit">Commit starten</button>
+          <button id="cancelCommitDialogBtn" type="button" value="cancel">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="app.js"></script>
   </body>

@@ -1,5 +1,8 @@
 const CONFIG = {
-  DEFAULT_BASE_URL: "https://richti03.github.io/skvstatic"
+  DEFAULT_BASE_URL: "https://richti03.github.io/skvstatic",
+  GITHUB_OWNER: "richti03",
+  GITHUB_REPO: "skvstatic",
+  GITHUB_BRANCH: "SkvJsonGenerator"
 };
 
 const linkLabelOptions = [
@@ -208,7 +211,15 @@ const addEntryBtn = document.querySelector("#addEntryBtn");
 const generateBtn = document.querySelector("#generateBtn");
 const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
+const commitBtn = document.querySelector("#commitBtn");
 const resultActions = document.querySelector("#resultActions");
+const commitStatus = document.querySelector("#commitStatus");
+const commitDialog = document.querySelector("#commitDialog");
+const commitForm = document.querySelector("#commitForm");
+const githubUsernameInput = document.querySelector("#githubUsernameInput");
+const githubTokenInput = document.querySelector("#githubTokenInput");
+const commitMessageInput = document.querySelector("#commitMessageInput");
+const cancelCommitDialogBtn = document.querySelector("#cancelCommitDialogBtn");
 const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
 let confirmedGalleryName = "";
@@ -371,6 +382,7 @@ function confirmGalleryName() {
 function clearResult() {
   outputEl.textContent = "";
   resultActions.classList.add("hidden");
+  setCommitStatus("");
 }
 
 function resetValidationUi() {
@@ -1093,6 +1105,237 @@ function getFetchUrl() {
   return `${base}/src/data/${specs[typeSelect.value].filename}`;
 }
 
+function getDataPath() {
+  if (typeSelect.value === "gallery") {
+    const galleryName = getActiveGalleryName();
+    return `src/data/gallerys/${galleryName}.json`;
+  }
+  return `src/data/${specs[typeSelect.value].filename}`;
+}
+
+function getOutputJson() {
+  const jsonText = outputEl.textContent.trim();
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setCommitStatus(text, state = "") {
+  if (!commitStatus) return;
+  commitStatus.textContent = text;
+  commitStatus.classList.remove("is-success", "is-error");
+  if (state === "success") commitStatus.classList.add("is-success");
+  if (state === "error") commitStatus.classList.add("is-error");
+}
+
+function toBase64Utf8(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+async function getExistingFileSha({ owner, repo, path, branch, token }) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Datei-Info konnte nicht geladen werden (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload.sha || null;
+}
+
+async function getRepositoryDefaultBranch({ owner, repo, token }) {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Repository konnte nicht geladen werden (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload.default_branch || "main";
+}
+
+async function getBranchHeadSha({ owner, repo, branch, token }) {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Branch-Info konnte nicht geladen werden (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload?.object?.sha || null;
+}
+
+async function createBranchFromDefault({ owner, repo, branch, token }) {
+  const defaultBranch = await getRepositoryDefaultBranch({ owner, repo, token });
+  const baseSha = await getBranchHeadSha({ owner, repo, branch: defaultBranch, token });
+  if (!baseSha) {
+    throw new Error(`Default-Branch '${defaultBranch}' konnte nicht aufgelöst werden.`);
+  }
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ref: `refs/heads/${branch}`,
+      sha: baseSha
+    })
+  });
+
+  if (response.status === 422) {
+    return;
+  }
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Branch konnte nicht erstellt werden (${response.status}): ${errorText}`);
+  }
+}
+
+async function ensureBranchExists({ owner, repo, branch, token }) {
+  const existingSha = await getBranchHeadSha({ owner, repo, branch, token });
+  if (existingSha) return;
+  await createBranchFromDefault({ owner, repo, branch, token });
+}
+
+function openCommitDialog(defaultMessage) {
+  if (!commitDialog || !commitForm || !githubTokenInput || !commitMessageInput) return Promise.resolve(null);
+  if (typeof commitDialog.showModal !== "function") {
+    const token = window.prompt("GitHub Personal Access Token eingeben:");
+    if (!token) return Promise.resolve(null);
+    const commitMessage = window.prompt("Commit-Message:", defaultMessage);
+    if (!commitMessage) return Promise.resolve(null);
+    return Promise.resolve({ token: token.trim(), commitMessage: commitMessage.trim(), username: "" });
+  }
+
+  commitMessageInput.value = defaultMessage;
+
+  return new Promise((resolve) => {
+    const closeDialog = (result = null) => {
+      commitForm.removeEventListener("submit", handleSubmit);
+      cancelCommitDialogBtn?.removeEventListener("click", handleCancel);
+      commitDialog.removeEventListener("cancel", handleCancel);
+      if (commitDialog.open) commitDialog.close();
+      resolve(result);
+    };
+
+    const handleSubmit = (event) => {
+      event.preventDefault();
+      const token = githubTokenInput.value.trim();
+      const commitMessage = commitMessageInput.value.trim();
+      if (!token || !commitMessage) return;
+      const username = githubUsernameInput?.value?.trim() || "";
+      closeDialog({ token, commitMessage, username });
+    };
+
+    const handleCancel = () => closeDialog(null);
+
+    commitForm.addEventListener("submit", handleSubmit);
+    cancelCommitDialogBtn?.addEventListener("click", handleCancel);
+    commitDialog.addEventListener("cancel", handleCancel);
+    commitDialog.showModal();
+    githubTokenInput.focus();
+    githubTokenInput.select();
+  });
+}
+
+async function commitGeneratedJson() {
+  const parsedJson = getOutputJson();
+  if (!parsedJson) {
+    setCommitStatus("Bitte zuerst erfolgreich validieren, damit ein gültiges JSON vorhanden ist.", "error");
+    return;
+  }
+
+  const owner = CONFIG.GITHUB_OWNER;
+  const repo = CONFIG.GITHUB_REPO;
+  const branch = CONFIG.GITHUB_BRANCH;
+  const path = getDataPath();
+
+  const defaultMessage = `Update ${path} via SKV JSON Generator`;
+  const commitInput = await openCommitDialog(defaultMessage);
+  if (!commitInput) {
+    setCommitStatus("Commit abgebrochen.", "error");
+    return;
+  }
+
+  commitBtn.disabled = true;
+  setCommitStatus("Branch wird geprüft...");
+
+  try {
+    await ensureBranchExists({ owner, repo, branch, token: commitInput.token });
+    setCommitStatus("Commit wird erstellt...");
+    const normalizedJson = JSON.stringify(parsedJson, null, 2);
+    const sha = await getExistingFileSha({ owner, repo, path, branch, token: commitInput.token });
+
+    const payload = {
+      message: commitInput.commitMessage,
+      content: toBase64Utf8(`${normalizedJson}\n`),
+      branch
+    };
+    if (sha) payload.sha = sha;
+
+    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${commitInput.token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GitHub API Fehler (${response.status}): ${errorText}`);
+    }
+
+    const result = await response.json();
+    const commitUrl = result?.commit?.html_url || "";
+    const statusText = commitUrl
+      ? `Commit erfolgreich: ${commitUrl}`
+      : "Commit erfolgreich erstellt.";
+    setCommitStatus(statusText, "success");
+  } catch (error) {
+    setCommitStatus(`Commit fehlgeschlagen: ${error.message}`, "error");
+  } finally {
+    commitBtn.disabled = false;
+  }
+}
+
 async function loadOnlineJson() {
   const url = getFetchUrl();
   if (!url) return;
@@ -1183,6 +1426,8 @@ downloadBtn.addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+commitBtn.addEventListener("click", commitGeneratedJson);
 
 scrollTopBtn?.addEventListener("click", () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
