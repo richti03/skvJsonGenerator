@@ -587,7 +587,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   const dragHandle = document.createElement("button");
   dragHandle.type = "button";
   dragHandle.className = "drag-handle";
-  dragHandle.textContent = "↕";
+  dragHandle.textContent = "☰";
   dragHandle.title = "Eintrag per Drag & Drop verschieben";
   dragHandle.setAttribute("aria-label", "Eintrag per Drag & Drop verschieben");
 
