@@ -187,7 +187,7 @@ Veranstaltungen für den Event-Bereich auf der Startseite.
 
 ## 4) Datei: `vorstand.json`
 
-Pfad: `src/data/vorstand.json`
+Pfad: `./src/data/vorstand.json`
 
 ### 4.1 Zweck
 
@@ -453,7 +453,7 @@ Bildauflistung für Galerien.
   {
     "name": "Max Mustermann",
     "role": "Präsident",
-    "image": "src/img/verein/vorstand/max-mustermann.png",
+    "image": "./src/img/verein/vorstand/max-mustermann.png",
     "tags": [
       "Leitung"
     ],
