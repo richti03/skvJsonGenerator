@@ -228,7 +228,8 @@ const windowRegex = /^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}$/;
 
 function findLinkOptionByType(typeValue) {
   if (typeof typeValue !== "string") return null;
-  const normalizedType = typeValue.trim().toLowerCase();
+  let normalizedType = typeValue.trim().toLowerCase();
+  if (normalizedType.startsWith("type=")) normalizedType = normalizedType.slice(5).trim();
   if (!normalizedType) return null;
 
   return (
@@ -547,8 +548,11 @@ function addListItem(field, container, value = {}, onChange = () => {}) {
       : field.itemFields;
 
   const normalizedValue = { ...value };
-  if (field.name === "links" && !normalizedValue.label && normalizedValue.type) {
-    const matchingOption = findLinkOptionByType(normalizedValue.type);
+  if (field.name === "links") {
+    const hasValidLabel = linkLabelOptions.some((option) => option.value === normalizedValue.label);
+    const matchingOption = hasValidLabel
+      ? null
+      : findLinkOptionByType(normalizedValue.type) || findLinkOptionByType(normalizedValue.label);
     if (matchingOption) normalizedValue.label = matchingOption.value;
   }
 
