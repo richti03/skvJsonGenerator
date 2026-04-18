@@ -807,6 +807,22 @@ function updateNewsDeleteAt(entryEl) {
   deleteInput.dataset.autoManaged = "true";
 }
 
+function updateHeaderNoticesDeleteAt(entryEl) {
+  if (typeSelect.value !== "header-notices") return;
+  const countdownInput = entryEl.querySelector('[data-field="countdown"]');
+  const deleteInput = entryEl.querySelector('[data-field="deleteAt"]');
+  if (!countdownInput || !deleteInput) return;
+
+  const hasCountdown = !!countdownInput.value.trim();
+  if (hasCountdown) {
+    deleteInput.value = countdownInput.value;
+    deleteInput.disabled = true;
+    return;
+  }
+
+  deleteInput.disabled = false;
+}
+
 function updateEventDeleteAt(entryData) {
   if (typeSelect.value !== "events") return entryData;
   const calculatedDeleteAt = calculateEventDeleteAt(entryData);
@@ -1066,6 +1082,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
 
   renumberAndRefreshSummaries();
   syncEntryExpiredState(entry);
+  updateHeaderNoticesDeleteAt(entry);
 
   if (scrollToEntry) {
     entry.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1465,6 +1482,9 @@ entriesEl.addEventListener("input", (event) => {
     }
     if (event.target.dataset.field === "date" || event.target.dataset.field === "publishAt") {
       updateNewsDeleteAt(entryEl);
+    }
+    if (event.target.dataset.field === "countdown") {
+      updateHeaderNoticesDeleteAt(entryEl);
     }
     const index = [...entriesEl.querySelectorAll(".entry")].indexOf(entryEl);
     refreshEntrySummary(entryEl, index);
