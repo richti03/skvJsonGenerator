@@ -27,12 +27,12 @@ Dieses Dokument beschreibt **alle JSON-Dateien** im Projekt, inklusive:
 Es gibt im Projekt zwei unterschiedliche Datumsformate:
 
 1. **Anzeigeformat** (`date`):
-    - `TT.MM.JJJJ`
-    - Beispiel: `11.04.2026`
+   - `TT.MM.JJJJ`
+   - Beispiel: `11.04.2026`
 
 2. **Sichtbarkeitsfenster** (`publishAt`, `deleteAt`):
-    - `JJJJ-MM-TT-HH:mm`
-    - Beispiel: `2026-11-11-12:00`
+   - `JJJJ-MM-TT-HH:mm`
+   - Beispiel: `2026-11-11-12:00`
 
 ### 1.3 Sichtbarkeitslogik (`publishAt` / `deleteAt`)
 
@@ -396,6 +396,46 @@ Bildauflistung für Galerien.
 
 ---
 
+## 9) Datei: `header-notices.json`
+
+Pfad: `./src/data/header-notices.json`
+
+### 9.1 Zweck
+
+Wichtige Hinweise für das **rote Hinweisband im Header** (ganz oben auf jeder Seite).
+
+### 9.2 Felder pro Eintrag
+
+| Feld        | Typ      | Pflicht                                                                 | Beschreibung                                                              |
+|-------------|----------|-------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `text`      | `string` | Ja                                                                      | Hinweistext, der im Band angezeigt wird.                                  |
+| `countdown` | `string` | Optional                                                                | Zielzeitpunkt (`JJJJ-MM-TT-HH:mm`) für einen Live-Countdown hinter `text`. |
+| `publishAt` | `string` | Optional                                                                | Start Sichtbarkeit (`JJJJ-MM-TT-HH:mm`).                                  |
+| `deleteAt`  | `string` | Wenn `countdown`, dann das Datum vom Countdown, sonst trotzdem Pflicht. | Ende Sichtbarkeit (`JJJJ-MM-TT-HH:mm`).                           |
+
+### 9.3 Countdown-Regeln
+
+- Wenn Restzeit **>= 1 Tag**: Anzeige in `Tage`, `Stunden`, `Minuten`
+- Wenn Restzeit **< 1 Tag**: Anzeige in `Stunden`, `Minuten`, `Sekunden`
+- Ist `countdown` gesetzt, sollte `deleteAt` identisch oder später als `countdown` sein.
+- Läuft der Countdown ab, wird der komplette Hinweis sofort entfernt.
+- Hinweise im Band werden visuell durch `+++` getrennt.
+
+### 9.4 Vorlage
+
+```json
+[
+  {
+    "text": "xyz",
+    "countdown": "2026-05-09-16:30",
+    "publishAt": "2026-04-18-15:00",
+    "deleteAt": "2026-05-09-16:30"
+  }
+]
+```
+
+---
+
 ## 10) Checkliste vor dem Speichern
 
 1. JSON ist syntaktisch valide.
@@ -414,20 +454,20 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "title": "Beispielnews",
-    "date": "01.01.2027",
-    "text": "Text der News",
-    "publishAt": "2026-12-01-00:00",
-    "deleteAt": "2027-01-31-23:59",
-    "links": [
-      {
-        "type": "more",
-        "label": "Mehr erfahren",
-        "url": "https://example.org"
-      }
-    ]
-  }
+   {
+      "title": "Beispielnews",
+      "date": "01.01.2027",
+      "text": "Text der News",
+      "publishAt": "2026-12-01-00:00",
+      "deleteAt": "2027-01-31-23:59",
+      "links": [
+         {
+            "type": "more",
+            "label": "Mehr",
+            "url": "https://example.org"
+         }
+      ]
+   }
 ]
 ```
 
@@ -435,14 +475,14 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "title": "Beispielveranstaltung",
-    "date": "11.11.2026",
-    "time": "11:11 Uhr",
-    "location": "Rathaus",
-    "publishAt": "2026-10-01-00:00",
-    "deleteAt": "2026-11-12-00:00"
-  }
+   {
+      "title": "Beispielveranstaltung",
+      "date": "11.11.2026",
+      "time": "11:11 Uhr",
+      "location": "Rathaus",
+      "publishAt": "2026-10-01-00:00",
+      "deleteAt": "2026-11-12-00:00"
+   }
 ]
 ```
 
@@ -450,23 +490,23 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "name": "Max Mustermann",
-    "role": "Präsident",
-    "image": "./src/img/verein/vorstand/max-mustermann.png",
-    "tags": [
-      "Leitung"
-    ],
-    "description": "Kurztext",
-    "socials": [
-      {
-        "label": "E-Mail",
-        "href": "mailto:max@example.org",
-        "className": "liEmail",
-        "icon": "@"
-      }
-    ]
-  }
+   {
+      "name": "Max Mustermann",
+      "role": "Präsident",
+      "image": "src/img/verein/vorstand/max-mustermann.png",
+      "tags": [
+         "Leitung"
+      ],
+      "description": "Kurztext",
+      "socials": [
+         {
+            "label": "E-Mail",
+            "href": "mailto:max@example.org",
+            "className": "liEmail",
+            "icon": "@"
+         }
+      ]
+   }
 ]
 ```
 
@@ -474,11 +514,11 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "name": "Erika Muster",
-    "role": "Programm",
-    "image": "./src/img/verein/elferrat/erika-muster.svg"
-  }
+   {
+      "name": "Erika Muster",
+      "role": "Programm",
+      "image": "./src/img/verein/elferrat/erika-muster.svg"
+   }
 ]
 ```
 
@@ -486,17 +526,17 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "session": "48. Session",
-    "year": "2026/2027",
-    "image": "./src/img/verein/prinzenpaare/pp2627.JPG",
-    "adultPair": [
-      {
-        "prince": "Max I.",
-        "princess": "Mia I."
-      }
-    ]
-  }
+   {
+      "session": "48. Session",
+      "year": "2026/2027",
+      "image": "./src/img/verein/prinzenpaare/pp2627.JPG",
+      "adultPair": [
+         {
+            "prince": "Max I.",
+            "princess": "Mia I."
+         }
+      ]
+   }
 ]
 ```
 
@@ -504,11 +544,11 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "icon": "website",
-    "text": "Webseite",
-    "url": "https://example.org"
-  }
+   {
+      "icon": "website",
+      "text": "Webseite",
+      "url": "https://example.org"
+   }
 ]
 ```
 
@@ -516,10 +556,10 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "src": "./src/img/home-gallery/01.JPG",
-    "alt": "Titelbild"
-  }
+   {
+      "src": "./src/img/home-gallery/01.JPG",
+      "alt": "Titelbild"
+   }
 ]
 ```
 
@@ -527,9 +567,22 @@ Bildauflistung für Galerien.
 
 ```json
 [
-  {
-    "src": "./src/img/sponsors/sponsor.png",
-    "alt": "Sponsorname"
-  }
+   {
+      "src": "./src/img/sponsors/sponsor.png",
+      "alt": "Sponsorname"
+   }
+]
+```
+
+### `header-notices.json`
+
+```json
+[
+   {
+      "text": "Vorverkauf endet in:",
+      "countdown": "2026-04-19-15:18",
+      "publishAt": "2026-01-01-00:00",
+      "deleteAt": "2026-04-19-15:18"
+   }
 ]
 ```
