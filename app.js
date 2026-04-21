@@ -240,6 +240,7 @@ const outputEl = document.querySelector("#output");
 const validationList = document.querySelector("#validationList");
 const validationPanel = document.querySelector("#validationPanel");
 const addEntryBtn = document.querySelector("#addEntryBtn");
+const galleryImagePicker = document.querySelector("#galleryImagePicker");
 const generateBtn = document.querySelector("#generateBtn");
 const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
@@ -256,6 +257,7 @@ const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
 let confirmedGalleryName = "";
 let galleryNameConfirmed = false;
+const selectedGalleryFiles = new Map();
 
 function appendOption(key) {
   const opt = document.createElement("option");
@@ -403,6 +405,7 @@ function confirmGalleryName() {
       return;
     }
     renderEntries("gallery");
+    selectedGalleryFiles.clear();
   }
 
   confirmedGalleryName = normalizedName;
@@ -415,6 +418,18 @@ function clearResult() {
   outputEl.textContent = "";
   resultActions.classList.add("hidden");
   setCommitStatus("");
+}
+
+function rememberGalleryFiles(files) {
+  if (!Array.isArray(files) || files.length === 0) return;
+  const folder = getActiveGalleryName();
+
+  files.forEach((file) => {
+    const safeFilename = getFilenameOnly(file?.name || "");
+    if (!safeFilename) return;
+    const repoPath = `src/img/gallerys/${folder}/${safeFilename}`;
+    selectedGalleryFiles.set(repoPath, file);
+  });
 }
 
 function resetValidationUi() {
@@ -1194,6 +1209,54 @@ function toBase64Utf8(value) {
   return btoa(binary);
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Datei konnte nicht gelesen werden."));
+        return;
+      }
+      const base64 = result.split(",")[1];
+      if (!base64) {
+        reject(new Error("Datei konnte nicht in Base64 umgewandelt werden."));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("Fehler beim Lesen der Datei."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function upsertGithubFile({ owner, repo, branch, token, path, message, contentBase64 }) {
+  const sha = await getExistingFileSha({ owner, repo, path, branch, token });
+  const payload = {
+    message,
+    content: contentBase64,
+    branch
+  };
+  if (sha) payload.sha = sha;
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+    method: "PUT",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`GitHub API Fehler (${response.status}) bei '${path}': ${errorText}`);
+  }
+
+  return response.json();
+}
+
 async function getExistingFileSha({ owner, repo, path, branch, token }) {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`;
   const response = await fetch(url, {
@@ -1350,31 +1413,42 @@ async function commitGeneratedJson() {
     await ensureBranchExists({ owner, repo, branch, token: commitInput.token });
     setCommitStatus("Commit wird erstellt...");
     const normalizedJson = JSON.stringify(parsedJson, null, 2);
-    const sha = await getExistingFileSha({ owner, repo, path, branch, token: commitInput.token });
-
-    const payload = {
+    const result = await upsertGithubFile({
+      owner,
+      repo,
+      branch,
+      token: commitInput.token,
+      path,
       message: commitInput.commitMessage,
-      content: toBase64Utf8(`${normalizedJson}\n`),
-      branch
-    };
-    if (sha) payload.sha = sha;
-
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-      method: "PUT",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${commitInput.token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
+      contentBase64: toBase64Utf8(`${normalizedJson}\n`)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GitHub API Fehler (${response.status}): ${errorText}`);
+    if (typeSelect.value === "gallery") {
+      const galleryFilePaths = new Set(
+        parsedJson
+          .map((entry) => (entry?.src && typeof entry.src === "string" ? entry.src : ""))
+          .filter(Boolean)
+          .map((src) => src.replace(/^\.\//, ""))
+      );
+
+      const filesToUpload = [...selectedGalleryFiles.entries()]
+        .filter(([filePath]) => galleryFilePaths.has(filePath))
+        .map(([filePath, file]) => ({ filePath, file }));
+
+      for (const item of filesToUpload) {
+        const contentBase64 = await fileToBase64(item.file);
+        await upsertGithubFile({
+          owner,
+          repo,
+          branch,
+          token: commitInput.token,
+          path: item.filePath,
+          message: commitInput.commitMessage,
+          contentBase64
+        });
+      }
     }
 
-    const result = await response.json();
     const commitUrl = result?.commit?.html_url || "";
     const statusText = commitUrl
       ? `Commit erfolgreich: <a href="https://github.com/richti03/skvstatic/compare/SkvJsonGenerator" target="_blank">${commitUrl}</a>`
@@ -1432,7 +1506,23 @@ typeSelect.addEventListener("change", () => {
 });
 
 addEntryBtn.addEventListener("click", () => {
+  if (typeSelect.value === "gallery" && galleryImagePicker) {
+    galleryImagePicker.value = "";
+    galleryImagePicker.click();
+    return;
+  }
   addEntry();
+  resetValidationUi();
+});
+
+galleryImagePicker?.addEventListener("change", () => {
+  const files = [...(galleryImagePicker.files || [])];
+  if (files.length === 0) return;
+
+  rememberGalleryFiles(files);
+  files.forEach((file) => addEntry({ src: file.name, alt: "" }, { expand: false, insert: "end", scrollToEntry: false }));
+  collapseAllEntries();
+  renumberAndRefreshSummaries();
   resetValidationUi();
 });
 
