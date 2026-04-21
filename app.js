@@ -240,6 +240,7 @@ const outputEl = document.querySelector("#output");
 const validationList = document.querySelector("#validationList");
 const validationPanel = document.querySelector("#validationPanel");
 const addEntryBtn = document.querySelector("#addEntryBtn");
+const galleryImagePicker = document.querySelector("#galleryImagePicker");
 const generateBtn = document.querySelector("#generateBtn");
 const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
@@ -256,6 +257,8 @@ const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
 let confirmedGalleryName = "";
 let galleryNameConfirmed = false;
+const selectedGalleryFiles = new Map();
+let onlineJsonLoaded = false;
 
 function appendOption(key) {
   const opt = document.createElement("option");
@@ -373,7 +376,7 @@ function updateGalleryConfirmationState() {
   const needsConfirmation = isGalleryType && (!galleryNameConfirmed || currentName !== confirmedGalleryName);
 
   loadOnlineBtn.disabled = needsConfirmation;
-  addEntryBtn.disabled = needsConfirmation;
+  addEntryBtn.disabled = needsConfirmation || !onlineJsonLoaded;
 
   if (!isGalleryType) {
     setGalleryHint("Bitte Ordnernamen bestätigen, bevor Einträge geladen oder erstellt werden.");
@@ -403,6 +406,10 @@ function confirmGalleryName() {
       return;
     }
     renderEntries("gallery");
+    [...selectedGalleryFiles.values()].forEach((item) => {
+      if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+    });
+    selectedGalleryFiles.clear();
   }
 
   confirmedGalleryName = normalizedName;
@@ -415,6 +422,50 @@ function clearResult() {
   outputEl.textContent = "";
   resultActions.classList.add("hidden");
   setCommitStatus("");
+}
+
+function setOnlineJsonLoaded(value) {
+  onlineJsonLoaded = Boolean(value);
+  updateGalleryConfirmationState();
+}
+
+function rememberGalleryFiles(files) {
+  if (!Array.isArray(files) || files.length === 0) return;
+  const folder = getActiveGalleryName();
+
+  files.forEach((file) => {
+    const safeFilename = getFilenameOnly(file?.name || "");
+    if (!safeFilename) return;
+    const repoPath = `src/img/gallerys/${folder}/${safeFilename}`;
+    const existing = selectedGalleryFiles.get(repoPath);
+    if (existing?.objectUrl) URL.revokeObjectURL(existing.objectUrl);
+    selectedGalleryFiles.set(repoPath, {
+      file,
+      objectUrl: URL.createObjectURL(file)
+    });
+  });
+}
+
+function getCurrentGallerySrcPathsFromInputs() {
+  if (typeSelect.value !== "gallery") return new Set();
+  const paths = new Set();
+  entriesEl.querySelectorAll('.entry [data-field="src"]').forEach((input) => {
+    const filename = getFilenameOnly(input.value);
+    const prefix = input.dataset.pathPrefix || "";
+    if (!filename || !prefix) return;
+    paths.add(`${prefix}${filename}`.replace(/^\.\//, ""));
+  });
+  return paths;
+}
+
+function pruneUnusedSelectedGalleryFiles() {
+  if (typeSelect.value !== "gallery") return;
+  const activePaths = getCurrentGallerySrcPathsFromInputs();
+  [...selectedGalleryFiles.entries()].forEach(([filePath, fileData]) => {
+    if (activePaths.has(filePath)) return;
+    if (fileData?.objectUrl) URL.revokeObjectURL(fileData.objectUrl);
+    selectedGalleryFiles.delete(filePath);
+  });
 }
 
 function resetValidationUi() {
@@ -459,6 +510,17 @@ function updateImagePreviewForInput(input) {
   }
 
   const relativeSrc = `${pathPrefix}${filename}`;
+  const isGalleryImage = typeSelect.value === "gallery" && input.dataset.field === "src";
+  const galleryRepoPath = relativeSrc.replace(/^\.\//, "");
+  const selectedGalleryFile = isGalleryImage ? selectedGalleryFiles.get(galleryRepoPath) : null;
+  if (selectedGalleryFile?.objectUrl) {
+    previewEl.src = selectedGalleryFile.objectUrl;
+    previewEl.alt = `Vorschau ${filename}`;
+    previewEl.classList.remove("hidden");
+    delete previewEl.dataset.fallbackSrc;
+    return;
+  }
+
   const normalizedRelative = relativeSrc.replace(/^\.\//, "");
   const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${normalizedRelative}`;
 
@@ -1065,6 +1127,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   deleteBtn.textContent = "Eintrag löschen";
   deleteBtn.addEventListener("click", () => {
     entry.remove();
+    pruneUnusedSelectedGalleryFiles();
     renumberAndRefreshSummaries();
     resetValidationUi();
   });
@@ -1107,6 +1170,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
 
 function validateAndGenerate() {
   resetValidationUi();
+  pruneUnusedSelectedGalleryFiles();
 
   const entries = [...entriesEl.querySelectorAll(".entry")].map((entryEl) => {
     updateNewsDeleteAt(entryEl);
@@ -1194,23 +1258,134 @@ function toBase64Utf8(value) {
   return btoa(binary);
 }
 
-async function getExistingFileSha({ owner, repo, path, branch, token }) {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`;
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Datei konnte nicht gelesen werden."));
+        return;
+      }
+      const base64 = result.split(",")[1];
+      if (!base64) {
+        reject(new Error("Datei konnte nicht in Base64 umgewandelt werden."));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("Fehler beim Lesen der Datei."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function githubApiRequest(url, { token, method = "GET", body } = {}) {
   const response = await fetch(url, {
+    method,
     headers: {
       Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {})
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
   });
 
-  if (response.status === 404) return null;
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Datei-Info konnte nicht geladen werden (${response.status}): ${errorText}`);
+    throw new Error(`GitHub API Fehler (${response.status}): ${errorText}`);
   }
 
-  const payload = await response.json();
-  return payload.sha || null;
+  return response.json();
+}
+
+async function createGitBlob({ owner, repo, token, contentBase64 }) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/git/blobs`;
+  const payload = await githubApiRequest(url, {
+    token,
+    method: "POST",
+    body: {
+      content: contentBase64,
+      encoding: "base64"
+    },
+  });
+  return payload.sha;
+}
+
+async function getCommitTreeSha({ owner, repo, token, commitSha }) {
+  const payload = await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`, { token });
+  return payload?.tree?.sha || null;
+}
+
+async function createGitTree({ owner, repo, token, baseTreeSha, entries }) {
+  const payload = await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+    token,
+    method: "POST",
+    body: {
+      base_tree: baseTreeSha,
+      tree: entries
+    }
+  });
+  return payload.sha;
+}
+
+async function createGitCommit({ owner, repo, token, message, treeSha, parentSha }) {
+  const payload = await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+    token,
+    method: "POST",
+    body: {
+      message,
+      tree: treeSha,
+      parents: [parentSha]
+    }
+  });
+  return payload.sha;
+}
+
+async function updateBranchRef({ owner, repo, token, branch, commitSha }) {
+  const updateUrl = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`;
+  try {
+    await githubApiRequest(updateUrl, {
+      token,
+      method: "PATCH",
+      body: { sha: commitSha, force: false }
+    });
+  } catch (error) {
+    const errorMessage = String(error?.message || "");
+    if (!errorMessage.includes("Reference does not exist")) throw error;
+
+    await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+      token,
+      method: "POST",
+      body: {
+        ref: `refs/heads/${branch}`,
+        sha: commitSha
+      }
+    });
+  }
+}
+
+async function createSingleGitHubCommit({ owner, repo, branch, token, message, files }) {
+  const headSha = await getBranchHeadSha({ owner, repo, branch, token });
+  if (!headSha) throw new Error(`Branch '${branch}' konnte nicht aufgelöst werden.`);
+
+  const baseTreeSha = await getCommitTreeSha({ owner, repo, token, commitSha: headSha });
+  if (!baseTreeSha) throw new Error("Basis-Tree konnte nicht geladen werden.");
+
+  const treeEntries = [];
+  for (const file of files) {
+    const blobSha = await createGitBlob({ owner, repo, token, contentBase64: file.contentBase64 });
+    treeEntries.push({
+      path: file.path,
+      mode: "100644",
+      type: "blob",
+      sha: blobSha
+    });
+  }
+
+  const treeSha = await createGitTree({ owner, repo, token, baseTreeSha, entries: treeEntries });
+  const commitSha = await createGitCommit({ owner, repo, token, message, treeSha, parentSha: headSha });
+  await updateBranchRef({ owner, repo, token, branch, commitSha });
+  return commitSha;
 }
 
 async function getRepositoryDefaultBranch({ owner, repo, token }) {
@@ -1325,6 +1500,7 @@ function openCommitDialog(defaultMessage) {
 }
 
 async function commitGeneratedJson() {
+  pruneUnusedSelectedGalleryFiles();
   const parsedJson = getOutputJson();
   if (!parsedJson) {
     setCommitStatus("Bitte zuerst erfolgreich validieren, damit ein gültiges JSON vorhanden ist.", "error");
@@ -1350,32 +1526,38 @@ async function commitGeneratedJson() {
     await ensureBranchExists({ owner, repo, branch, token: commitInput.token });
     setCommitStatus("Commit wird erstellt...");
     const normalizedJson = JSON.stringify(parsedJson, null, 2);
-    const sha = await getExistingFileSha({ owner, repo, path, branch, token: commitInput.token });
+    const filesForCommit = [
+      { path, contentBase64: toBase64Utf8(`${normalizedJson}\n`) }
+    ];
 
-    const payload = {
-      message: commitInput.commitMessage,
-      content: toBase64Utf8(`${normalizedJson}\n`),
-      branch
-    };
-    if (sha) payload.sha = sha;
+    if (typeSelect.value === "gallery") {
+      const galleryFilePaths = new Set(
+        parsedJson
+          .map((entry) => (entry?.src && typeof entry.src === "string" ? entry.src : ""))
+          .filter(Boolean)
+          .map((src) => src.replace(/^\.\//, ""))
+      );
 
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-      method: "PUT",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${commitInput.token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
+      const filesToUpload = [...selectedGalleryFiles.entries()]
+        .filter(([filePath]) => galleryFilePaths.has(filePath))
+        .map(([filePath, data]) => ({ filePath, file: data.file }));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GitHub API Fehler (${response.status}): ${errorText}`);
+      for (const item of filesToUpload) {
+        const contentBase64 = await fileToBase64(item.file);
+        filesForCommit.push({ path: item.filePath, contentBase64 });
+      }
     }
 
-    const result = await response.json();
-    const commitUrl = result?.commit?.html_url || "";
+    const commitSha = await createSingleGitHubCommit({
+      owner,
+      repo,
+      branch,
+      token: commitInput.token,
+      message: commitInput.commitMessage,
+      files: filesForCommit
+    });
+
+    const commitUrl = commitSha ? `https://github.com/${owner}/${repo}/commit/${commitSha}` : "";
     const statusText = commitUrl
       ? `Commit erfolgreich: <a href="https://github.com/richti03/skvstatic/compare/SkvJsonGenerator" target="_blank">${commitUrl}</a>`
       : "Commit erfolgreich erstellt.";
@@ -1412,8 +1594,10 @@ async function loadOnlineJson() {
     });
 
     renderEntries(typeSelect.value, normalizedJson);
+    setOnlineJsonLoaded(true);
     loadOnlineBtn.textContent = "Online JSON geladen";
   } catch (error) {
+    setOnlineJsonLoaded(false);
     loadOnlineBtn.textContent = `Fehler beim Laden (${error.message})`;
   } finally {
     setTimeout(() => {
@@ -1424,6 +1608,7 @@ async function loadOnlineJson() {
 }
 
 typeSelect.addEventListener("change", () => {
+  setOnlineJsonLoaded(false);
   if (typeSelect.value === "gallery" && !galleryNameConfirmed) {
     galleryNameInput.value = DEFAULT_GALLERY_NAME;
   }
@@ -1432,7 +1617,23 @@ typeSelect.addEventListener("change", () => {
 });
 
 addEntryBtn.addEventListener("click", () => {
+  if (typeSelect.value === "gallery" && galleryImagePicker) {
+    galleryImagePicker.value = "";
+    galleryImagePicker.click();
+    return;
+  }
   addEntry();
+  resetValidationUi();
+});
+
+galleryImagePicker?.addEventListener("change", () => {
+  const files = [...(galleryImagePicker.files || [])];
+  if (files.length === 0) return;
+
+  rememberGalleryFiles(files);
+  files.forEach((file) => addEntry({ src: file.name, alt: "" }, { expand: false, insert: "end", scrollToEntry: false }));
+  collapseAllEntries();
+  renumberAndRefreshSummaries();
   resetValidationUi();
 });
 
