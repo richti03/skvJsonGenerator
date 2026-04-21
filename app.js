@@ -405,6 +405,9 @@ function confirmGalleryName() {
       return;
     }
     renderEntries("gallery");
+    [...selectedGalleryFiles.values()].forEach((item) => {
+      if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+    });
     selectedGalleryFiles.clear();
   }
 
@@ -428,7 +431,12 @@ function rememberGalleryFiles(files) {
     const safeFilename = getFilenameOnly(file?.name || "");
     if (!safeFilename) return;
     const repoPath = `src/img/gallerys/${folder}/${safeFilename}`;
-    selectedGalleryFiles.set(repoPath, file);
+    const existing = selectedGalleryFiles.get(repoPath);
+    if (existing?.objectUrl) URL.revokeObjectURL(existing.objectUrl);
+    selectedGalleryFiles.set(repoPath, {
+      file,
+      objectUrl: URL.createObjectURL(file)
+    });
   });
 }
 
@@ -474,6 +482,17 @@ function updateImagePreviewForInput(input) {
   }
 
   const relativeSrc = `${pathPrefix}${filename}`;
+  const isGalleryImage = typeSelect.value === "gallery" && input.dataset.field === "src";
+  const galleryRepoPath = relativeSrc.replace(/^\.\//, "");
+  const selectedGalleryFile = isGalleryImage ? selectedGalleryFiles.get(galleryRepoPath) : null;
+  if (selectedGalleryFile?.objectUrl) {
+    previewEl.src = selectedGalleryFile.objectUrl;
+    previewEl.alt = `Vorschau ${filename}`;
+    previewEl.classList.remove("hidden");
+    delete previewEl.dataset.fallbackSrc;
+    return;
+  }
+
   const normalizedRelative = relativeSrc.replace(/^\.\//, "");
   const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${normalizedRelative}`;
 
@@ -1433,7 +1452,7 @@ async function commitGeneratedJson() {
 
       const filesToUpload = [...selectedGalleryFiles.entries()]
         .filter(([filePath]) => galleryFilePaths.has(filePath))
-        .map(([filePath, file]) => ({ filePath, file }));
+        .map(([filePath, data]) => ({ filePath, file: data.file }));
 
       for (const item of filesToUpload) {
         const contentBase64 = await fileToBase64(item.file);
