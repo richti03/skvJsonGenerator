@@ -1342,11 +1342,26 @@ async function createGitCommit({ owner, repo, token, message, treeSha, parentSha
 }
 
 async function updateBranchRef({ owner, repo, token, branch, commitSha }) {
-  await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`, {
-    token,
-    method: "PATCH",
-    body: { sha: commitSha, force: false }
-  });
+  const updateUrl = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`;
+  try {
+    await githubApiRequest(updateUrl, {
+      token,
+      method: "PATCH",
+      body: { sha: commitSha, force: false }
+    });
+  } catch (error) {
+    const errorMessage = String(error?.message || "");
+    if (!errorMessage.includes("Reference does not exist")) throw error;
+
+    await githubApiRequest(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+      token,
+      method: "POST",
+      body: {
+        ref: `refs/heads/${branch}`,
+        sha: commitSha
+      }
+    });
+  }
 }
 
 async function createSingleGitHubCommit({ owner, repo, branch, token, message, files }) {
