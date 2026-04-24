@@ -14,6 +14,32 @@
       </p>
 
       <section class="panel controls">
+        <div class="branch-toolbar">
+          <div>
+            <label for="sourceBranchInput">Quell-Branch (JSON laden)</label>
+            <input id="sourceBranchInput" list="branchesList" type="text" value="main" />
+          </div>
+          <div>
+            <label for="targetBranchInput">Ziel-Branch (Commit)</label>
+            <input id="targetBranchInput" list="branchesList" type="text" value="skvJsonGenerator" />
+          </div>
+          <div class="branch-toolbar-actions">
+            <button id="syncBranchesBtn" type="button">Branches synchronisieren</button>
+            <a
+              id="compareLink"
+              class="github-icon-link"
+              href="https://github.com/richti03/skvstatic/compare/main...skvJsonGenerator"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Vergleichsseite in GitHub öffnen"
+              title="Compare in GitHub öffnen"
+            >
+              <span aria-hidden="true">🐙</span>
+            </a>
+          </div>
+        </div>
+        <datalist id="branchesList"></datalist>
+
         <div class="grid-2">
           <div>
             <label for="typeSelect">Dateityp</label>
@@ -68,7 +94,7 @@
       <form id="commitForm" method="dialog" class="commit-dialog-form" autocomplete="on">
         <h2>JSON zu GitHub committen</h2>
         <p>
-          Ziel: <code>richti03/skvstatic</code> · Branch: <code>SkvJsonGenerator</code>
+          Ziel: <code>richti03/skvstatic</code> · Branch: <code id="commitBranchLabel">skvJsonGenerator</code>
         </p>
 
         <label for="githubUsernameInput">GitHub Benutzername</label>
