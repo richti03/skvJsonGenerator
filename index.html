@@ -102,6 +102,21 @@
       </form>
     </dialog>
 
+    <dialog id="galleryDeleteDialog" class="confirm-dialog">
+      <form id="galleryDeleteForm" method="dialog" class="confirm-dialog-form">
+        <h2>Galerie-Eintrag löschen</h2>
+        <p>
+          Soll das Bild zusätzlich im Git-Repository gelöscht werden?
+        </p>
+
+        <div class="actions">
+          <button id="confirmDeleteWithRepoBtn" type="button">Bild + Eintrag löschen</button>
+          <button id="confirmDeleteEntryOnlyBtn" type="button" class="secondary-button">Nur Eintrag löschen</button>
+          <button id="cancelGalleryDeleteBtn" type="button" class="secondary-button">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="app.js"></script>
   </body>
 </html>
