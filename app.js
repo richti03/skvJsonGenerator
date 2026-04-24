@@ -240,7 +240,6 @@ const outputEl = document.querySelector("#output");
 const validationList = document.querySelector("#validationList");
 const validationPanel = document.querySelector("#validationPanel");
 const addEntryBtn = document.querySelector("#addEntryBtn");
-const galleryImagePicker = document.querySelector("#galleryImagePicker");
 const generateBtn = document.querySelector("#generateBtn");
 const copyBtn = document.querySelector("#copyBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
@@ -2108,25 +2107,52 @@ typeSelect.addEventListener("change", () => {
   renderEntries(typeSelect.value);
 });
 
-addEntryBtn.addEventListener("click", () => {
-  if (typeSelect.value === "gallery" && galleryImagePicker) {
-    galleryImagePicker.value = "";
-    galleryImagePicker.click();
+addEntryBtn.addEventListener("click", async () => {
+  if (typeSelect.value !== "gallery") {
+    addEntry();
+    resetValidationUi();
     return;
   }
-  addEntry();
-  resetValidationUi();
-});
 
-galleryImagePicker?.addEventListener("change", () => {
-  const files = [...(galleryImagePicker.files || [])];
-  if (files.length === 0) return;
+  const source = await openGallerySourceDialog();
+  if (!source) return;
 
-  rememberGalleryFiles(files);
-  files.forEach((file) => addEntry({ src: file.name, alt: "" }, { expand: false, insert: "end", scrollToEntry: false }));
-  collapseAllEntries();
-  renumberAndRefreshSummaries();
-  resetValidationUi();
+  if (source === "new") {
+    const file = await pickSingleLocalImage();
+    if (!file) return;
+    rememberGalleryFiles([file]);
+    addEntry({ src: file.name, alt: "" });
+    resetValidationUi();
+    return;
+  }
+
+  if (source === "internal") {
+    try {
+      const internalImages = await fetchInternalGalleryImages();
+      if (internalImages.length === 0) {
+        window.alert("Im gewählten Galerieordner wurden keine Bilder gefunden.");
+        return;
+      }
+      const selectedFile = await openInternalGalleryImageDialog(internalImages);
+      if (!selectedFile) return;
+      addEntry({ src: selectedFile, alt: "" });
+      resetValidationUi();
+    } catch (error) {
+      window.alert(`Interne Bilder konnten nicht geladen werden: ${error.message}`);
+    }
+    return;
+  }
+
+  if (source === "external") {
+    const link = window.prompt("Bitte externen Bildlink eingeben (https://...):", "");
+    if (!link) return;
+    if (!isExternalImagePath(link)) {
+      window.alert("Bitte eine vollständige http(s)-URL angeben.");
+      return;
+    }
+    addEntry({ src: link.trim(), alt: "" });
+    resetValidationUi();
+  }
 });
 
 generateBtn.addEventListener("click", validateAndGenerate);
