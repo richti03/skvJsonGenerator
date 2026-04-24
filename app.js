@@ -276,11 +276,15 @@ const confirmGalleryInternalImageBtn = document.querySelector("#confirmGalleryIn
 const cancelGalleryInternalImageBtn = document.querySelector("#cancelGalleryInternalImageBtn");
 const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
+const MANAGED_FILE_TYPES = new Set(["vorstand", "elferrat", "royals", "downloads"]);
 let confirmedGalleryName = "";
 let galleryNameConfirmed = false;
 const selectedGalleryFiles = new Map();
 const pendingGalleryRepoDeletes = new Set();
 const detachedGalleryUploads = new Set();
+const selectedManagedFiles = new Map();
+const pendingManagedRepoDeletes = new Set();
+const detachedManagedUploads = new Set();
 let onlineJsonLoaded = false;
 
 function appendOption(key) {
@@ -471,6 +475,100 @@ function rememberGalleryFiles(files) {
   });
 }
 
+function isManagedFileType(typeKey = typeSelect.value) {
+  return MANAGED_FILE_TYPES.has(typeKey);
+}
+
+function getManagedFilenameField(typeKey = typeSelect.value) {
+  const fields = specs[typeKey]?.fields;
+  if (!Array.isArray(fields)) return null;
+  return fields.find((field) => field.filenameOnly) || null;
+}
+
+function getManagedFileInput(entryEl) {
+  const fileField = getManagedFilenameField();
+  if (!fileField || !entryEl) return null;
+  return entryEl.querySelector(`[data-field="${fileField.name}"]`);
+}
+
+function getManagedRepoPathFromInput(input) {
+  if (!input || input.dataset.filenameOnly !== "true") return "";
+  const filename = getFilenameOnly(input.value);
+  const prefix = input.dataset.pathPrefix || "";
+  if (!filename || !prefix) return "";
+  return `${prefix}${filename}`.replace(/^\.\//, "");
+}
+
+function getManagedRepoPathFromEntry(entryEl) {
+  return getManagedRepoPathFromInput(getManagedFileInput(entryEl));
+}
+
+function getManagedFieldAcceptValue() {
+  return typeSelect.value === "downloads" ? ".pdf,.doc,.docx,.zip,.jpg,.jpeg,.png,.svg" : "image/*";
+}
+
+function rememberManagedFiles(files) {
+  if (!isManagedFileType() || !Array.isArray(files) || files.length === 0) return;
+  const field = getManagedFilenameField();
+  if (!field?.pathPrefix) return;
+
+  files.forEach((file) => {
+    const safeFilename = getFilenameOnly(file?.name || "");
+    if (!safeFilename) return;
+    const repoPath = `${field.pathPrefix}${safeFilename}`.replace(/^\.\//, "");
+    const existing = selectedManagedFiles.get(repoPath);
+    if (existing?.objectUrl) URL.revokeObjectURL(existing.objectUrl);
+    selectedManagedFiles.set(repoPath, { file, objectUrl: URL.createObjectURL(file) });
+  });
+}
+
+function getCurrentManagedPathsFromInputs() {
+  if (!isManagedFileType()) return new Set();
+  const paths = new Set();
+  entriesEl.querySelectorAll('.entry input[data-filename-only="true"]').forEach((input) => {
+    const path = getManagedRepoPathFromInput(input);
+    if (path) paths.add(path);
+  });
+  return paths;
+}
+
+function pruneUnusedSelectedManagedFiles() {
+  if (!isManagedFileType()) return;
+  const activePaths = getCurrentManagedPathsFromInputs();
+  [...selectedManagedFiles.entries()].forEach(([filePath, fileData]) => {
+    if (activePaths.has(filePath) || detachedManagedUploads.has(filePath)) return;
+    if (fileData?.objectUrl) URL.revokeObjectURL(fileData.objectUrl);
+    selectedManagedFiles.delete(filePath);
+  });
+}
+
+function prunePendingManagedDeletes(activeEntries = null) {
+  if (!isManagedFileType()) return;
+  const fileField = getManagedFilenameField();
+  const activePaths = activeEntries
+    ? new Set(
+      activeEntries
+        .map((entry) => (entry?.[fileField.name] && typeof entry[fileField.name] === "string" ? entry[fileField.name] : ""))
+        .filter(Boolean)
+        .filter((value) => !isExternalImagePath(value))
+        .map((src) => src.replace(/^\.\//, ""))
+    )
+    : getCurrentManagedPathsFromInputs();
+
+  [...pendingManagedRepoDeletes].forEach((filePath) => {
+    if (activePaths.has(filePath)) pendingManagedRepoDeletes.delete(filePath);
+  });
+}
+
+function clearManagedTrackingState() {
+  [...selectedManagedFiles.values()].forEach((item) => {
+    if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  });
+  selectedManagedFiles.clear();
+  pendingManagedRepoDeletes.clear();
+  detachedManagedUploads.clear();
+}
+
 function getCurrentGallerySrcPathsFromInputs() {
   if (typeSelect.value !== "gallery") return new Set();
   const paths = new Set();
@@ -522,12 +620,17 @@ function prunePendingGalleryDeletes(activeEntries = null) {
 
 function removeEntryElement(entryEl) {
   const removedSrcPath = getGalleryEntrySrcPath(entryEl);
+  const removedManagedPath = getManagedRepoPathFromEntry(entryEl);
   entryEl.remove();
   pruneUnusedSelectedGalleryFiles();
+  pruneUnusedSelectedManagedFiles();
   renumberAndRefreshSummaries();
   resetValidationUi();
   if (removedSrcPath && pendingGalleryRepoDeletes.has(removedSrcPath)) {
     prunePendingGalleryDeletes();
+  }
+  if (removedManagedPath && pendingManagedRepoDeletes.has(removedManagedPath)) {
+    prunePendingManagedDeletes();
   }
 }
 
@@ -617,6 +720,21 @@ function updateImagePreviewForInput(input) {
     return;
   }
 
+  if (isManagedFileType() && input.dataset.managedSource === "external") {
+    const externalUrl = input.value.trim();
+    if (!externalUrl) {
+      previewEl.classList.add("hidden");
+      previewEl.removeAttribute("src");
+      delete previewEl.dataset.fallbackSrc;
+      return;
+    }
+    previewEl.src = externalUrl;
+    previewEl.alt = "Vorschau externe Datei";
+    previewEl.classList.remove("hidden");
+    delete previewEl.dataset.fallbackSrc;
+    return;
+  }
+
   if (input.dataset.filenameOnly !== "true") return;
   const filename = getFilenameOnly(input.value);
   const pathPrefix = input.dataset.pathPrefix || "";
@@ -631,8 +749,16 @@ function updateImagePreviewForInput(input) {
   const isGalleryImage = typeSelect.value === "gallery" && input.dataset.field === "src";
   const galleryRepoPath = relativeSrc.replace(/^\.\//, "");
   const selectedGalleryFile = isGalleryImage ? selectedGalleryFiles.get(galleryRepoPath) : null;
+  const selectedManagedFile = !isGalleryImage ? selectedManagedFiles.get(galleryRepoPath) : null;
   if (selectedGalleryFile?.objectUrl) {
     previewEl.src = selectedGalleryFile.objectUrl;
+    previewEl.alt = `Vorschau ${filename}`;
+    previewEl.classList.remove("hidden");
+    delete previewEl.dataset.fallbackSrc;
+    return;
+  }
+  if (selectedManagedFile?.objectUrl) {
+    previewEl.src = selectedManagedFile.objectUrl;
     previewEl.alt = `Vorschau ${filename}`;
     previewEl.classList.remove("hidden");
     delete previewEl.dataset.fallbackSrc;
@@ -663,6 +789,115 @@ function setGallerySrcInputMode(srcInput, mode, value) {
 
   inputWithPrefix?.classList.toggle("is-external-source", mode === "external");
   updateImagePreviewForInput(srcInput);
+}
+
+function setManagedFileInputMode(fileInput, mode, value) {
+  if (!fileInput) return;
+  const inputWithPrefix = fileInput.closest(".input-with-prefix");
+  fileInput.dataset.managedSource = mode;
+
+  if (mode === "external") {
+    fileInput.dataset.filenameOnly = "false";
+    fileInput.value = (value || "").trim();
+  } else {
+    fileInput.dataset.filenameOnly = "true";
+    fileInput.value = getFilenameOnly(value || "");
+  }
+
+  inputWithPrefix?.classList.toggle("is-external-source", mode === "external");
+  updateImagePreviewForInput(fileInput);
+}
+
+function pickSingleLocalFile(accept = "") {
+  return new Promise((resolve) => {
+    const picker = document.createElement("input");
+    picker.type = "file";
+    if (accept) picker.accept = accept;
+    picker.addEventListener("change", () => {
+      const [file] = [...(picker.files || [])];
+      resolve(file || null);
+    }, { once: true });
+    picker.click();
+  });
+}
+
+async function startManagedFileReplacement(entryEl) {
+  if (!isManagedFileType()) return;
+  const fileInput = getManagedFileInput(entryEl);
+  if (!fileInput) return;
+
+  const previousPath = getManagedRepoPathFromInput(fileInput);
+  let selectedPolicy = null;
+  if (previousPath) {
+    selectedPolicy = await openGalleryReplacePolicyDialog();
+    if (!selectedPolicy) return;
+  }
+
+  const source = await openGallerySourceDialog();
+  if (!source) return;
+
+  const applyPreviousPolicy = () => {
+    if (!previousPath) return;
+    if (selectedPolicy === "delete") {
+      pendingManagedRepoDeletes.add(previousPath);
+      detachedManagedUploads.delete(previousPath);
+      return;
+    }
+    pendingManagedRepoDeletes.delete(previousPath);
+    if (selectedManagedFiles.has(previousPath)) detachedManagedUploads.add(previousPath);
+  };
+
+  if (source === "new") {
+    const file = await pickSingleLocalFile(getManagedFieldAcceptValue());
+    if (!file) return;
+    applyPreviousPolicy();
+    rememberManagedFiles([file]);
+    const nextPath = `${fileInput.dataset.pathPrefix || ""}${getFilenameOnly(file.name)}`.replace(/^\.\//, "");
+    pendingManagedRepoDeletes.delete(nextPath);
+    detachedManagedUploads.delete(nextPath);
+    setManagedFileInputMode(fileInput, "repo", file.name);
+  }
+
+  if (source === "internal") {
+    try {
+      const internalFiles = await fetchInternalManagedFiles();
+      if (internalFiles.length === 0) {
+        window.alert("Im Zielordner wurden keine Dateien gefunden.");
+        return;
+      }
+      const relativePrefix = fileInput.dataset.pathPrefix || "";
+      const selectedFile = await openInternalGalleryImageDialog(internalFiles, {
+        relativePrefix,
+        repoPrefix: relativePrefix.replace(/^\.\//, ""),
+        selectedFileMap: selectedManagedFiles,
+        previewLabel: "Vorschau Datei"
+      });
+      if (!selectedFile) return;
+      applyPreviousPolicy();
+      const nextPath = `${fileInput.dataset.pathPrefix || ""}${getFilenameOnly(selectedFile)}`.replace(/^\.\//, "");
+      pendingManagedRepoDeletes.delete(nextPath);
+      detachedManagedUploads.delete(nextPath);
+      setManagedFileInputMode(fileInput, "repo", selectedFile);
+    } catch (error) {
+      window.alert(`Interne Dateien konnten nicht geladen werden: ${error.message}`);
+      return;
+    }
+  }
+
+  if (source === "external") {
+    const link = window.prompt("Bitte externen Dateilink eingeben (https://...):", fileInput.value.trim());
+    if (!link) return;
+    if (!isExternalImagePath(link)) {
+      window.alert("Bitte eine vollständige http(s)-URL angeben.");
+      return;
+    }
+    applyPreviousPolicy();
+    setManagedFileInputMode(fileInput, "external", link.trim());
+  }
+
+  const index = [...entriesEl.querySelectorAll(".entry")].indexOf(entryEl);
+  refreshEntrySummary(entryEl, index);
+  resetValidationUi();
 }
 
 function createInput(field, value) {
@@ -934,8 +1169,67 @@ async function fetchInternalGalleryImages() {
   throw lastError || new Error("Keine internen Bilder gefunden.");
 }
 
-function openInternalGalleryImageDialog(filenames) {
+async function fetchInternalManagedFiles() {
+  if (!isManagedFileType()) return [];
+  const field = getManagedFilenameField();
+  const prefix = (field?.pathPrefix || "").replace(/^\.\//, "").replace(/\/$/, "");
+  if (!prefix) throw new Error("Kein Zielordner für Dateien definiert.");
+
+  const owner = CONFIG.GITHUB_OWNER;
+  const repo = CONFIG.GITHUB_REPO;
+  const branch = CONFIG.GITHUB_BRANCH;
+  const apiUrls = [
+    `https://api.github.com/repos/${owner}/${repo}/contents/${prefix}?ref=${encodeURIComponent(branch)}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${prefix}`
+  ];
+  const fileNameSet = new Set();
+  const knownFilenames = new Set();
+
+  entriesEl.querySelectorAll('.entry input[data-filename-only="true"]').forEach((input) => {
+    const filename = getFilenameOnly(input.value);
+    if (filename) knownFilenames.add(filename);
+  });
+  [...selectedManagedFiles.keys()]
+    .filter((filePath) => filePath.startsWith(`${prefix}/`))
+    .forEach((filePath) => knownFilenames.add(filePath.split("/").pop()));
+
+  let lastError = null;
+  for (const apiUrl of apiUrls) {
+    try {
+      const response = await fetch(apiUrl, { headers: { Accept: "application/vnd.github+json" } });
+      if (!response.ok) {
+        lastError = new Error(`Ordner konnte nicht geladen werden (HTTP ${response.status}).`);
+        continue;
+      }
+      const payload = await response.json();
+      if (Array.isArray(payload)) {
+        payload
+          .filter((item) => item?.type === "file" && typeof item?.name === "string")
+          .map((item) => item.name)
+          .forEach((name) => fileNameSet.add(name));
+      }
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  knownFilenames.forEach((name) => fileNameSet.add(name));
+  const files = [...fileNameSet].sort((a, b) => a.localeCompare(b, "de"));
+  if (files.length > 0) return files;
+  throw lastError || new Error("Keine internen Dateien gefunden.");
+}
+
+function openInternalGalleryImageDialog(filenames, options = {}) {
   if (!Array.isArray(filenames) || filenames.length === 0) return Promise.resolve(null);
+  const relativePrefix = typeof options.relativePrefix === "string" && options.relativePrefix
+    ? options.relativePrefix
+    : `./src/img/gallerys/${getActiveGalleryName()}/`;
+  const repoPrefix = typeof options.repoPrefix === "string" && options.repoPrefix
+    ? options.repoPrefix
+    : relativePrefix.replace(/^\.\//, "");
+  const selectedFileMap = options.selectedFileMap instanceof Map ? options.selectedFileMap : selectedGalleryFiles;
+  const previewLabel = options.previewLabel || "Vorschau";
 
   if (!galleryInternalPickerDialog || !galleryInternalPickerForm || !galleryInternalImageSelect || typeof galleryInternalPickerDialog.showModal !== "function") {
     const chosen = window.prompt(`Internes Bild wählen:\n${filenames.join("\n")}`, filenames[0]);
@@ -961,22 +1255,23 @@ function openInternalGalleryImageDialog(filenames) {
       return;
     }
 
-    const folder = getActiveGalleryName();
-    const repoPath = `src/img/gallerys/${folder}/${selectedFile}`;
-    const selectedGalleryFile = selectedGalleryFiles.get(repoPath);
+    const normalizedRepoPrefix = repoPrefix.replace(/\/?$/, "/");
+    const repoPath = `${normalizedRepoPrefix}${selectedFile}`;
+    const selectedGalleryFile = selectedFileMap.get(repoPath);
     if (selectedGalleryFile?.objectUrl) {
       galleryInternalImagePreview.src = selectedGalleryFile.objectUrl;
-      galleryInternalImagePreview.alt = `Vorschau ${selectedFile}`;
+      galleryInternalImagePreview.alt = `${previewLabel} ${selectedFile}`;
       galleryInternalImagePreview.classList.remove("hidden");
       delete galleryInternalImagePreview.dataset.fallbackSrc;
       return;
     }
 
-    const relativeSrc = `./src/img/gallerys/${folder}/${selectedFile}`;
+    const normalizedRelativePrefix = relativePrefix.replace(/\/?$/, "/");
+    const relativeSrc = `${normalizedRelativePrefix}${selectedFile}`;
     const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${relativeSrc.replace(/^\.\//, "")}`;
     galleryInternalImagePreview.dataset.fallbackSrc = relativeSrc;
     galleryInternalImagePreview.src = absoluteSrc;
-    galleryInternalImagePreview.alt = `Vorschau ${selectedFile}`;
+    galleryInternalImagePreview.alt = `${previewLabel} ${selectedFile}`;
     galleryInternalImagePreview.classList.remove("hidden");
   };
 
@@ -1210,6 +1505,11 @@ function readEntry(entryEl) {
     }
 
     if (typeSelect.value === "gallery" && name === "src" && input.dataset.gallerySource === "external") {
+      data[name] = value;
+      return;
+    }
+
+    if (isManagedFileType() && input.dataset.managedSource === "external") {
       data[name] = value;
       return;
     }
@@ -1547,12 +1847,13 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   deleteBtn.type = "button";
   deleteBtn.textContent = "Eintrag löschen";
   deleteBtn.addEventListener("click", async () => {
-    if (typeSelect.value !== "gallery") {
+    if (typeSelect.value !== "gallery" && !isManagedFileType()) {
       removeEntryElement(entry);
       return;
     }
 
     const srcPath = getGalleryEntrySrcPath(entry);
+    const managedPath = getManagedRepoPathFromEntry(entry);
     const decision = await openGalleryDeleteDialog();
     if (!decision) return;
 
@@ -1560,10 +1861,18 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
       pendingGalleryRepoDeletes.add(srcPath);
       detachedGalleryUploads.delete(srcPath);
     }
+    if (decision === "delete-repo" && managedPath) {
+      pendingManagedRepoDeletes.add(managedPath);
+      detachedManagedUploads.delete(managedPath);
+    }
 
     if (decision === "entry-only" && srcPath) {
       pendingGalleryRepoDeletes.delete(srcPath);
       if (selectedGalleryFiles.has(srcPath)) detachedGalleryUploads.add(srcPath);
+    }
+    if (decision === "entry-only" && managedPath) {
+      pendingManagedRepoDeletes.delete(managedPath);
+      if (selectedManagedFiles.has(managedPath)) detachedManagedUploads.add(managedPath);
     }
 
     removeEntryElement(entry);
@@ -1605,6 +1914,26 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
         }
         else wrapper.append(changeBtn);
       }
+      if (isManagedFileType(typeKey) && field.filenameOnly) {
+        const managedValue = typeof defaults[field.name] === "string" ? defaults[field.name] : "";
+        const managedMode = isExternalImagePath(managedValue) ? "external" : "repo";
+        input.readOnly = true;
+        setManagedFileInputMode(input, managedMode, managedValue);
+        const changeBtn = document.createElement("button");
+        changeBtn.type = "button";
+        changeBtn.textContent = "🔁";
+        changeBtn.className = "input-suffix-action";
+        changeBtn.title = "Datei wechseln";
+        changeBtn.setAttribute("aria-label", "Datei wechseln");
+        changeBtn.addEventListener("click", () => startManagedFileReplacement(entry));
+        const prefixWrap = input.closest(".input-with-prefix");
+        if (prefixWrap) {
+          prefixWrap.classList.add("has-suffix-action");
+          prefixWrap.append(changeBtn);
+        } else {
+          wrapper.append(changeBtn);
+        }
+      }
       body.append(wrapper);
     }
   });
@@ -1628,7 +1957,9 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
 function validateAndGenerate() {
   resetValidationUi();
   pruneUnusedSelectedGalleryFiles();
+  pruneUnusedSelectedManagedFiles();
   prunePendingGalleryDeletes();
+  prunePendingManagedDeletes();
 
   const entries = [...entriesEl.querySelectorAll(".entry")].map((entryEl) => {
     updateNewsDeleteAt(entryEl);
@@ -1661,6 +1992,7 @@ function renderEntries(typeKey, dataList = null, { useTemplate = false } = {}) {
     pendingGalleryRepoDeletes.clear();
     detachedGalleryUploads.clear();
   }
+  clearManagedTrackingState();
 
   const defaults = Array.isArray(dataList) && dataList.length > 0
     ? dataList
@@ -1981,6 +2313,7 @@ function openCommitDialog(defaultMessage) {
 
 async function commitGeneratedJson() {
   pruneUnusedSelectedGalleryFiles();
+  pruneUnusedSelectedManagedFiles();
   const parsedJson = getOutputJson();
   if (!parsedJson) {
     setCommitStatus("Bitte zuerst erfolgreich validieren, damit ein gültiges JSON vorhanden ist.", "error");
@@ -1992,6 +2325,7 @@ async function commitGeneratedJson() {
   const branch = CONFIG.GITHUB_BRANCH;
   const path = getDataPath();
   prunePendingGalleryDeletes(parsedJson);
+  prunePendingManagedDeletes(parsedJson);
 
   const defaultMessage = `Update ${path} via SKV JSON Generator`;
   const commitInput = await openCommitDialog(defaultMessage);
@@ -2037,6 +2371,34 @@ async function commitGeneratedJson() {
       });
     }
 
+    if (isManagedFileType()) {
+      const fileField = getManagedFilenameField();
+      const managedFilePaths = new Set(
+        parsedJson
+          .map((entry) => (entry?.[fileField.name] && typeof entry[fileField.name] === "string" ? entry[fileField.name] : ""))
+          .filter(Boolean)
+          .filter((value) => !isExternalImagePath(value))
+          .map((src) => src.replace(/^\.\//, ""))
+      );
+
+      const filesToUpload = [...selectedManagedFiles.entries()]
+        .filter(([filePath]) => {
+          if (pendingManagedRepoDeletes.has(filePath)) return false;
+          return managedFilePaths.has(filePath) || detachedManagedUploads.has(filePath);
+        })
+        .map(([filePath, data]) => ({ filePath, file: data.file }));
+
+      for (const item of filesToUpload) {
+        const contentBase64 = await fileToBase64(item.file);
+        filesForCommit.push({ path: item.filePath, contentBase64 });
+      }
+
+      pendingManagedRepoDeletes.forEach((filePath) => {
+        if (managedFilePaths.has(filePath)) return;
+        filesForCommit.push({ path: filePath, delete: true });
+      });
+    }
+
     const commitSha = await createSingleGitHubCommit({
       owner,
       repo,
@@ -2052,6 +2414,8 @@ async function commitGeneratedJson() {
       : "Commit erfolgreich erstellt.";
     if (typeSelect.value === "gallery") pendingGalleryRepoDeletes.clear();
     if (typeSelect.value === "gallery") detachedGalleryUploads.clear();
+    if (isManagedFileType()) pendingManagedRepoDeletes.clear();
+    if (isManagedFileType()) detachedManagedUploads.clear();
     setCommitStatus(statusText, "success");
   } catch (error) {
     setCommitStatus(`Commit fehlgeschlagen: ${error.message}`, "error");
@@ -2108,7 +2472,7 @@ typeSelect.addEventListener("change", () => {
 });
 
 addEntryBtn.addEventListener("click", async () => {
-  if (typeSelect.value !== "gallery") {
+  if (typeSelect.value !== "gallery" && !isManagedFileType()) {
     addEntry();
     resetValidationUi();
     return;
@@ -2118,39 +2482,71 @@ addEntryBtn.addEventListener("click", async () => {
   if (!source) return;
 
   if (source === "new") {
-    const file = await pickSingleLocalImage();
+    const file = typeSelect.value === "gallery"
+      ? await pickSingleLocalImage()
+      : await pickSingleLocalFile(getManagedFieldAcceptValue());
     if (!file) return;
-    rememberGalleryFiles([file]);
-    addEntry({ src: file.name, alt: "" });
+    if (typeSelect.value === "gallery") {
+      rememberGalleryFiles([file]);
+      addEntry({ src: file.name, alt: "" });
+    } else {
+      rememberManagedFiles([file]);
+      const field = getManagedFilenameField();
+      if (!field) return;
+      addEntry({ [field.name]: file.name });
+    }
     resetValidationUi();
     return;
   }
 
   if (source === "internal") {
     try {
-      const internalImages = await fetchInternalGalleryImages();
-      if (internalImages.length === 0) {
-        window.alert("Im gewählten Galerieordner wurden keine Bilder gefunden.");
+      const internalFiles = typeSelect.value === "gallery"
+        ? await fetchInternalGalleryImages()
+        : await fetchInternalManagedFiles();
+      if (internalFiles.length === 0) {
+        window.alert(typeSelect.value === "gallery"
+          ? "Im gewählten Galerieordner wurden keine Bilder gefunden."
+          : "Im Zielordner wurden keine Dateien gefunden.");
         return;
       }
-      const selectedFile = await openInternalGalleryImageDialog(internalImages);
+      const selectedFile = typeSelect.value === "gallery"
+        ? await openInternalGalleryImageDialog(internalFiles)
+        : await openInternalGalleryImageDialog(internalFiles, {
+          relativePrefix: (getManagedFilenameField()?.pathPrefix || ""),
+          repoPrefix: (getManagedFilenameField()?.pathPrefix || "").replace(/^\.\//, ""),
+          selectedFileMap: selectedManagedFiles,
+          previewLabel: "Vorschau Datei"
+        });
       if (!selectedFile) return;
-      addEntry({ src: selectedFile, alt: "" });
+      if (typeSelect.value === "gallery") {
+        addEntry({ src: selectedFile, alt: "" });
+      } else {
+        const field = getManagedFilenameField();
+        if (!field) return;
+        addEntry({ [field.name]: selectedFile });
+      }
       resetValidationUi();
     } catch (error) {
-      window.alert(`Interne Bilder konnten nicht geladen werden: ${error.message}`);
+      window.alert(`Interne Dateien konnten nicht geladen werden: ${error.message}`);
     }
     return;
   }
 
   if (source === "external") {
-    const link = window.prompt("Bitte externen Bildlink eingeben (https://...):", "");
+    const link = window.prompt("Bitte externen Dateilink eingeben (https://...):", "");
     if (!link) return;
     if (!isExternalImagePath(link)) {
       window.alert("Bitte eine vollständige http(s)-URL angeben.");
       return;
     }
-    addEntry({ src: link.trim(), alt: "" });
+    if (typeSelect.value === "gallery") {
+      addEntry({ src: link.trim(), alt: "" });
+    } else {
+      const field = getManagedFilenameField();
+      if (!field) return;
+      addEntry({ [field.name]: link.trim() });
+    }
     resetValidationUi();
   }
 });
