@@ -253,11 +253,17 @@ const githubUsernameInput = document.querySelector("#githubUsernameInput");
 const githubTokenInput = document.querySelector("#githubTokenInput");
 const commitMessageInput = document.querySelector("#commitMessageInput");
 const cancelCommitDialogBtn = document.querySelector("#cancelCommitDialogBtn");
+const galleryDeleteDialog = document.querySelector("#galleryDeleteDialog");
+const galleryDeleteForm = document.querySelector("#galleryDeleteForm");
+const confirmDeleteWithRepoBtn = document.querySelector("#confirmDeleteWithRepoBtn");
+const confirmDeleteEntryOnlyBtn = document.querySelector("#confirmDeleteEntryOnlyBtn");
+const cancelGalleryDeleteBtn = document.querySelector("#cancelGalleryDeleteBtn");
 const scrollTopBtn = document.querySelector("#scrollTopBtn");
 const DEFAULT_GALLERY_NAME = "home-gallery";
 let confirmedGalleryName = "";
 let galleryNameConfirmed = false;
 const selectedGalleryFiles = new Map();
+const pendingGalleryRepoDeletes = new Set();
 let onlineJsonLoaded = false;
 
 function appendOption(key) {
@@ -410,6 +416,7 @@ function confirmGalleryName() {
       if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
     });
     selectedGalleryFiles.clear();
+    pendingGalleryRepoDeletes.clear();
   }
 
   confirmedGalleryName = normalizedName;
@@ -465,6 +472,73 @@ function pruneUnusedSelectedGalleryFiles() {
     if (activePaths.has(filePath)) return;
     if (fileData?.objectUrl) URL.revokeObjectURL(fileData.objectUrl);
     selectedGalleryFiles.delete(filePath);
+  });
+}
+
+function getGalleryEntrySrcPath(entryEl) {
+  if (!entryEl || typeSelect.value !== "gallery") return "";
+  const srcInput = entryEl.querySelector('[data-field="src"]');
+  if (!srcInput) return "";
+  const filename = getFilenameOnly(srcInput.value);
+  const prefix = srcInput.dataset.pathPrefix || "";
+  if (!filename || !prefix) return "";
+  return `${prefix}${filename}`.replace(/^\.\//, "");
+}
+
+function prunePendingGalleryDeletes(activeEntries = null) {
+  const activePaths = activeEntries
+    ? new Set(
+      activeEntries
+        .map((entry) => (entry?.src && typeof entry.src === "string" ? entry.src : ""))
+        .filter(Boolean)
+        .map((src) => src.replace(/^\.\//, ""))
+    )
+    : getCurrentGallerySrcPathsFromInputs();
+
+  [...pendingGalleryRepoDeletes].forEach((filePath) => {
+    if (activePaths.has(filePath)) pendingGalleryRepoDeletes.delete(filePath);
+  });
+}
+
+function removeEntryElement(entryEl) {
+  const removedSrcPath = getGalleryEntrySrcPath(entryEl);
+  entryEl.remove();
+  pruneUnusedSelectedGalleryFiles();
+  renumberAndRefreshSummaries();
+  resetValidationUi();
+  if (removedSrcPath && pendingGalleryRepoDeletes.has(removedSrcPath)) {
+    prunePendingGalleryDeletes();
+  }
+}
+
+function openGalleryDeleteDialog() {
+  if (!galleryDeleteDialog || !galleryDeleteForm || typeof galleryDeleteDialog.showModal !== "function") {
+    const deleteInRepo = window.confirm(
+      "Soll das Bild auch im Git-Repository gelöscht werden?\nEmpfohlen: Ja (OK).\nAbbrechen: Nur Eintrag löschen."
+    );
+    return Promise.resolve(deleteInRepo ? "delete-repo" : "entry-only");
+  }
+
+  return new Promise((resolve) => {
+    const closeDialog = (result = null) => {
+      confirmDeleteWithRepoBtn?.removeEventListener("click", handleDeleteWithRepo);
+      confirmDeleteEntryOnlyBtn?.removeEventListener("click", handleEntryOnly);
+      cancelGalleryDeleteBtn?.removeEventListener("click", handleCancel);
+      galleryDeleteDialog.removeEventListener("cancel", handleCancel);
+      if (galleryDeleteDialog.open) galleryDeleteDialog.close();
+      resolve(result);
+    };
+
+    const handleDeleteWithRepo = () => closeDialog("delete-repo");
+    const handleEntryOnly = () => closeDialog("entry-only");
+    const handleCancel = () => closeDialog(null);
+
+    confirmDeleteWithRepoBtn?.addEventListener("click", handleDeleteWithRepo);
+    confirmDeleteEntryOnlyBtn?.addEventListener("click", handleEntryOnly);
+    cancelGalleryDeleteBtn?.addEventListener("click", handleCancel);
+    galleryDeleteDialog.addEventListener("cancel", handleCancel);
+    galleryDeleteDialog.showModal();
+    confirmDeleteWithRepoBtn?.focus();
   });
 }
 
@@ -1125,11 +1199,21 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.textContent = "Eintrag löschen";
-  deleteBtn.addEventListener("click", () => {
-    entry.remove();
-    pruneUnusedSelectedGalleryFiles();
-    renumberAndRefreshSummaries();
-    resetValidationUi();
+  deleteBtn.addEventListener("click", async () => {
+    if (typeSelect.value !== "gallery") {
+      removeEntryElement(entry);
+      return;
+    }
+
+    const srcPath = getGalleryEntrySrcPath(entry);
+    const decision = await openGalleryDeleteDialog();
+    if (!decision) return;
+
+    if (decision === "delete-repo" && srcPath) {
+      pendingGalleryRepoDeletes.add(srcPath);
+    }
+
+    removeEntryElement(entry);
   });
 
   actions.append(editBtn, doneBtn, deleteBtn);
@@ -1171,6 +1255,7 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
 function validateAndGenerate() {
   resetValidationUi();
   pruneUnusedSelectedGalleryFiles();
+  prunePendingGalleryDeletes();
 
   const entries = [...entriesEl.querySelectorAll(".entry")].map((entryEl) => {
     updateNewsDeleteAt(entryEl);
@@ -1191,6 +1276,7 @@ function validateAndGenerate() {
 function renderEntries(typeKey, dataList = null, { useTemplate = false } = {}) {
   entriesEl.innerHTML = "";
   resetValidationUi();
+  if (typeKey !== "gallery") pendingGalleryRepoDeletes.clear();
 
   const defaults = Array.isArray(dataList) && dataList.length > 0
     ? dataList
@@ -1373,6 +1459,16 @@ async function createSingleGitHubCommit({ owner, repo, branch, token, message, f
 
   const treeEntries = [];
   for (const file of files) {
+    if (file.delete === true) {
+      treeEntries.push({
+        path: file.path,
+        mode: "100644",
+        type: "blob",
+        sha: null
+      });
+      continue;
+    }
+
     const blobSha = await createGitBlob({ owner, repo, token, contentBase64: file.contentBase64 });
     treeEntries.push({
       path: file.path,
@@ -1511,6 +1607,7 @@ async function commitGeneratedJson() {
   const repo = CONFIG.GITHUB_REPO;
   const branch = CONFIG.GITHUB_BRANCH;
   const path = getDataPath();
+  prunePendingGalleryDeletes(parsedJson);
 
   const defaultMessage = `Update ${path} via SKV JSON Generator`;
   const commitInput = await openCommitDialog(defaultMessage);
@@ -1546,6 +1643,11 @@ async function commitGeneratedJson() {
         const contentBase64 = await fileToBase64(item.file);
         filesForCommit.push({ path: item.filePath, contentBase64 });
       }
+
+      pendingGalleryRepoDeletes.forEach((filePath) => {
+        if (galleryFilePaths.has(filePath)) return;
+        filesForCommit.push({ path: filePath, delete: true });
+      });
     }
 
     const commitSha = await createSingleGitHubCommit({
@@ -1561,6 +1663,7 @@ async function commitGeneratedJson() {
     const statusText = commitUrl
       ? `Commit erfolgreich: <a href="https://github.com/richti03/skvstatic/compare/SkvJsonGenerator" target="_blank">${commitUrl}</a>`
       : "Commit erfolgreich erstellt.";
+    if (typeSelect.value === "gallery") pendingGalleryRepoDeletes.clear();
     setCommitStatus(statusText, "success");
   } catch (error) {
     setCommitStatus(`Commit fehlgeschlagen: ${error.message}`, "error");
