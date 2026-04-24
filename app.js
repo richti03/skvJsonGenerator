@@ -232,9 +232,9 @@ const specs = {
 
 const typeSelect = document.querySelector("#typeSelect");
 const sourceBranchSelect = document.querySelector("#sourceBranchSelect");
-const targetBranchInput = document.querySelector("#targetBranchInput");
+const targetBranchSelect = document.querySelector("#targetBranchSelect");
+const targetBranchCustomInput = document.querySelector("#targetBranchCustomInput");
 const syncBranchesBtn = document.querySelector("#syncBranchesBtn");
-const branchesList = document.querySelector("#branchesList");
 const compareLink = document.querySelector("#compareLink");
 const commitBranchLabel = document.querySelector("#commitBranchLabel");
 const galleryNameWrap = document.querySelector("#galleryNameWrap");
@@ -303,8 +303,10 @@ function getSourceBranch() {
 }
 
 function getTargetBranch() {
-  const value = targetBranchInput?.value?.trim();
-  return value || CONFIG.DEFAULT_TARGET_BRANCH;
+  const customValue = targetBranchCustomInput?.value?.trim();
+  if (customValue) return customValue;
+  const selectedValue = targetBranchSelect?.value?.trim();
+  return selectedValue || CONFIG.DEFAULT_TARGET_BRANCH;
 }
 
 function appendOption(key) {
@@ -2368,16 +2370,24 @@ async function syncBranches() {
       sourceBranchSelect.value = nextSource;
     }
 
-    if (branchesList) {
-      branchesList.innerHTML = "";
+    if (targetBranchSelect) {
+      const previousTarget = targetBranchSelect.value;
+      targetBranchSelect.innerHTML = "";
       branchNames.forEach((name) => {
         const option = document.createElement("option");
         option.value = name;
-        branchesList.append(option);
+        option.textContent = name;
+        targetBranchSelect.append(option);
       });
+      const nextTarget = branchNames.includes(previousTarget)
+        ? previousTarget
+        : branchNames.includes(CONFIG.DEFAULT_TARGET_BRANCH)
+          ? CONFIG.DEFAULT_TARGET_BRANCH
+          : branchNames[0] || CONFIG.DEFAULT_TARGET_BRANCH;
+      targetBranchSelect.value = nextTarget;
     }
 
-    if (targetBranchInput && !targetBranchInput.value.trim()) targetBranchInput.value = CONFIG.DEFAULT_TARGET_BRANCH;
+    if (targetBranchCustomInput && !targetBranchCustomInput.value.trim()) targetBranchCustomInput.value = "";
     updateCompareLink();
     updateCommitBranchLabel();
     syncBranchesBtn.textContent = "✓";
@@ -2960,10 +2970,17 @@ sourceBranchSelect?.addEventListener("change", () => {
   setOnlineJsonLoaded(false);
 });
 
-targetBranchInput?.addEventListener("input", updateCompareLink);
+targetBranchSelect?.addEventListener("change", () => {
+  updateCompareLink();
+  updateCommitBranchLabel();
+});
 
-targetBranchInput?.addEventListener("change", () => {
-  if (!targetBranchInput.value.trim()) targetBranchInput.value = CONFIG.DEFAULT_TARGET_BRANCH;
+targetBranchCustomInput?.addEventListener("input", () => {
+  updateCompareLink();
+  updateCommitBranchLabel();
+});
+
+targetBranchCustomInput?.addEventListener("change", () => {
   updateCompareLink();
   updateCommitBranchLabel();
 });
@@ -3094,11 +3111,15 @@ entriesEl.addEventListener("dragend", (event) => {
 });
 
 typeSelect.value = "news";
-if (targetBranchInput) targetBranchInput.value = CONFIG.DEFAULT_TARGET_BRANCH;
 if (sourceBranchSelect) {
   sourceBranchSelect.innerHTML = `<option value="${CONFIG.DEFAULT_SOURCE_BRANCH}">${CONFIG.DEFAULT_SOURCE_BRANCH}</option>`;
   sourceBranchSelect.value = CONFIG.DEFAULT_SOURCE_BRANCH;
 }
+if (targetBranchSelect) {
+  targetBranchSelect.innerHTML = `<option value="${CONFIG.DEFAULT_TARGET_BRANCH}">${CONFIG.DEFAULT_TARGET_BRANCH}</option>`;
+  targetBranchSelect.value = CONFIG.DEFAULT_TARGET_BRANCH;
+}
+if (targetBranchCustomInput) targetBranchCustomInput.value = "";
 updateCompareLink();
 updateCommitBranchLabel();
 syncBranches();

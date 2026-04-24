@@ -15,8 +15,10 @@
             <select id="sourceBranchSelect"></select>
           </div>
           <div>
-            <label for="targetBranchInput">Ziel-Branch (Commit)</label>
-            <input id="targetBranchInput" list="branchesList" type="text" value="skvJsonGenerator" />
+            <label for="targetBranchSelect">Ziel-Branch (Commit)</label>
+            <select id="targetBranchSelect"></select>
+            <label for="targetBranchCustomInput" class="branch-custom-label">Oder neuen Branch anlegen</label>
+            <input id="targetBranchCustomInput" type="text" value="" placeholder="z. B. feature/neuer-branch" />
           </div>
           <div class="branch-toolbar-actions">
             <button id="syncBranchesBtn" class="icon-button" type="button" aria-label="Branches synchronisieren" title="Branches synchronisieren">🔄</button>
@@ -38,7 +40,6 @@
             </a>
           </div>
         </div>
-        <datalist id="branchesList"></datalist>
       </div>
     </header>
 
