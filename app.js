@@ -264,6 +264,7 @@ let confirmedGalleryName = "";
 let galleryNameConfirmed = false;
 const selectedGalleryFiles = new Map();
 const pendingGalleryRepoDeletes = new Set();
+const detachedGalleryUploads = new Set();
 let onlineJsonLoaded = false;
 
 function appendOption(key) {
@@ -417,6 +418,7 @@ function confirmGalleryName() {
     });
     selectedGalleryFiles.clear();
     pendingGalleryRepoDeletes.clear();
+    detachedGalleryUploads.clear();
   }
 
   confirmedGalleryName = normalizedName;
@@ -469,7 +471,7 @@ function pruneUnusedSelectedGalleryFiles() {
   if (typeSelect.value !== "gallery") return;
   const activePaths = getCurrentGallerySrcPathsFromInputs();
   [...selectedGalleryFiles.entries()].forEach(([filePath, fileData]) => {
-    if (activePaths.has(filePath)) return;
+    if (activePaths.has(filePath) || detachedGalleryUploads.has(filePath)) return;
     if (fileData?.objectUrl) URL.revokeObjectURL(fileData.objectUrl);
     selectedGalleryFiles.delete(filePath);
   });
@@ -514,7 +516,7 @@ function removeEntryElement(entryEl) {
 function openGalleryDeleteDialog() {
   if (!galleryDeleteDialog || !galleryDeleteForm || typeof galleryDeleteDialog.showModal !== "function") {
     const deleteInRepo = window.confirm(
-      "Soll das Bild auch im Git-Repository gelöscht werden?\nEmpfohlen: Ja (OK).\nAbbrechen: Nur Eintrag löschen."
+      "Soll das Bild auch im Git-Repository gelöscht werden?\nOK: Bild + Eintrag löschen\nAbbrechen: Nur Eintrag löschen."
     );
     return Promise.resolve(deleteInRepo ? "delete-repo" : "entry-only");
   }
@@ -1211,6 +1213,12 @@ function addEntry(defaults = {}, { expand = true, insert = "auto", scrollToEntry
 
     if (decision === "delete-repo" && srcPath) {
       pendingGalleryRepoDeletes.add(srcPath);
+      detachedGalleryUploads.delete(srcPath);
+    }
+
+    if (decision === "entry-only" && srcPath) {
+      pendingGalleryRepoDeletes.delete(srcPath);
+      if (selectedGalleryFiles.has(srcPath)) detachedGalleryUploads.add(srcPath);
     }
 
     removeEntryElement(entry);
@@ -1262,6 +1270,14 @@ function validateAndGenerate() {
     syncEntryExpiredState(entryEl);
     return updateEventDeleteAt(readEntry(entryEl));
   });
+  const activeGalleryPaths = new Set(
+    entries
+      .map((entry) => (entry?.src && typeof entry.src === "string" ? entry.src.replace(/^\.\//, "") : ""))
+      .filter(Boolean)
+  );
+  [...detachedGalleryUploads].forEach((filePath) => {
+    if (activeGalleryPaths.has(filePath)) detachedGalleryUploads.delete(filePath);
+  });
   const errors = validate(entries, typeSelect.value);
   renderValidation(errors);
 
@@ -1276,7 +1292,10 @@ function validateAndGenerate() {
 function renderEntries(typeKey, dataList = null, { useTemplate = false } = {}) {
   entriesEl.innerHTML = "";
   resetValidationUi();
-  if (typeKey !== "gallery") pendingGalleryRepoDeletes.clear();
+  if (typeKey !== "gallery") {
+    pendingGalleryRepoDeletes.clear();
+    detachedGalleryUploads.clear();
+  }
 
   const defaults = Array.isArray(dataList) && dataList.length > 0
     ? dataList
@@ -1636,7 +1655,10 @@ async function commitGeneratedJson() {
       );
 
       const filesToUpload = [...selectedGalleryFiles.entries()]
-        .filter(([filePath]) => galleryFilePaths.has(filePath))
+        .filter(([filePath]) => {
+          if (pendingGalleryRepoDeletes.has(filePath)) return false;
+          return galleryFilePaths.has(filePath) || detachedGalleryUploads.has(filePath);
+        })
         .map(([filePath, data]) => ({ filePath, file: data.file }));
 
       for (const item of filesToUpload) {
@@ -1664,6 +1686,7 @@ async function commitGeneratedJson() {
       ? `Commit erfolgreich: <a href="https://github.com/richti03/skvstatic/compare/SkvJsonGenerator" target="_blank">${commitUrl}</a>`
       : "Commit erfolgreich erstellt.";
     if (typeSelect.value === "gallery") pendingGalleryRepoDeletes.clear();
+    if (typeSelect.value === "gallery") detachedGalleryUploads.clear();
     setCommitStatus(statusText, "success");
   } catch (error) {
     setCommitStatus(`Commit fehlgeschlagen: ${error.message}`, "error");

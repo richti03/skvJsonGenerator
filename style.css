@@ -79,6 +79,15 @@ button {
 }
 
 button:hover { background: #1e40af; }
+button.secondary-button {
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+button.secondary-button:hover {
+  background: #eff6ff;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
