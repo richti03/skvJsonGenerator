@@ -865,8 +865,14 @@ async function startManagedFileReplacement(entryEl) {
         window.alert("Im Zielordner wurden keine Dateien gefunden.");
         return;
       }
-      const selectedFile = window.prompt(`Interne Datei wählen:\n${internalFiles.join("\n")}`, internalFiles[0]);
-      if (!selectedFile || !internalFiles.includes(selectedFile)) return;
+      const relativePrefix = fileInput.dataset.pathPrefix || "";
+      const selectedFile = await openInternalGalleryImageDialog(internalFiles, {
+        relativePrefix,
+        repoPrefix: relativePrefix.replace(/^\.\//, ""),
+        selectedFileMap: selectedManagedFiles,
+        previewLabel: "Vorschau Datei"
+      });
+      if (!selectedFile) return;
       applyPreviousPolicy();
       const nextPath = `${fileInput.dataset.pathPrefix || ""}${getFilenameOnly(selectedFile)}`.replace(/^\.\//, "");
       pendingManagedRepoDeletes.delete(nextPath);
@@ -1214,8 +1220,16 @@ async function fetchInternalManagedFiles() {
   throw lastError || new Error("Keine internen Dateien gefunden.");
 }
 
-function openInternalGalleryImageDialog(filenames) {
+function openInternalGalleryImageDialog(filenames, options = {}) {
   if (!Array.isArray(filenames) || filenames.length === 0) return Promise.resolve(null);
+  const relativePrefix = typeof options.relativePrefix === "string" && options.relativePrefix
+    ? options.relativePrefix
+    : `./src/img/gallerys/${getActiveGalleryName()}/`;
+  const repoPrefix = typeof options.repoPrefix === "string" && options.repoPrefix
+    ? options.repoPrefix
+    : relativePrefix.replace(/^\.\//, "");
+  const selectedFileMap = options.selectedFileMap instanceof Map ? options.selectedFileMap : selectedGalleryFiles;
+  const previewLabel = options.previewLabel || "Vorschau";
 
   if (!galleryInternalPickerDialog || !galleryInternalPickerForm || !galleryInternalImageSelect || typeof galleryInternalPickerDialog.showModal !== "function") {
     const chosen = window.prompt(`Internes Bild wählen:\n${filenames.join("\n")}`, filenames[0]);
@@ -1241,22 +1255,23 @@ function openInternalGalleryImageDialog(filenames) {
       return;
     }
 
-    const folder = getActiveGalleryName();
-    const repoPath = `src/img/gallerys/${folder}/${selectedFile}`;
-    const selectedGalleryFile = selectedGalleryFiles.get(repoPath);
+    const normalizedRepoPrefix = repoPrefix.replace(/\/?$/, "/");
+    const repoPath = `${normalizedRepoPrefix}${selectedFile}`;
+    const selectedGalleryFile = selectedFileMap.get(repoPath);
     if (selectedGalleryFile?.objectUrl) {
       galleryInternalImagePreview.src = selectedGalleryFile.objectUrl;
-      galleryInternalImagePreview.alt = `Vorschau ${selectedFile}`;
+      galleryInternalImagePreview.alt = `${previewLabel} ${selectedFile}`;
       galleryInternalImagePreview.classList.remove("hidden");
       delete galleryInternalImagePreview.dataset.fallbackSrc;
       return;
     }
 
-    const relativeSrc = `./src/img/gallerys/${folder}/${selectedFile}`;
+    const normalizedRelativePrefix = relativePrefix.replace(/\/?$/, "/");
+    const relativeSrc = `${normalizedRelativePrefix}${selectedFile}`;
     const absoluteSrc = `${CONFIG.DEFAULT_BASE_URL.replace(/\/$/, "")}/${relativeSrc.replace(/^\.\//, "")}`;
     galleryInternalImagePreview.dataset.fallbackSrc = relativeSrc;
     galleryInternalImagePreview.src = absoluteSrc;
-    galleryInternalImagePreview.alt = `Vorschau ${selectedFile}`;
+    galleryInternalImagePreview.alt = `${previewLabel} ${selectedFile}`;
     galleryInternalImagePreview.classList.remove("hidden");
   };
 
@@ -2497,7 +2512,12 @@ addEntryBtn.addEventListener("click", async () => {
       }
       const selectedFile = typeSelect.value === "gallery"
         ? await openInternalGalleryImageDialog(internalFiles)
-        : window.prompt(`Interne Datei wählen:\n${internalFiles.join("\n")}`, internalFiles[0]);
+        : await openInternalGalleryImageDialog(internalFiles, {
+          relativePrefix: (getManagedFilenameField()?.pathPrefix || ""),
+          repoPrefix: (getManagedFilenameField()?.pathPrefix || "").replace(/^\.\//, ""),
+          selectedFileMap: selectedManagedFiles,
+          previewLabel: "Vorschau Datei"
+        });
       if (!selectedFile) return;
       if (typeSelect.value === "gallery") {
         addEntry({ src: selectedFile, alt: "" });
